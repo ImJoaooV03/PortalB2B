@@ -10,16 +10,16 @@ interface SalesChartProps {
 export default function SalesChart({ data, loading }: SalesChartProps) {
   if (loading) {
     return (
-      <div className="h-[300px] w-full bg-gray-50 rounded-xl animate-pulse flex items-center justify-center text-gray-400">
-        Carregando gráfico...
+      <div className="h-[300px] w-full bg-white border border-black flex items-center justify-center text-black font-bold">
+        CARREGANDO...
       </div>
     );
   }
 
   if (!data || data.length === 0) {
     return (
-      <div className="h-[300px] w-full bg-gray-50 rounded-xl flex items-center justify-center text-gray-400 flex-col gap-2">
-        <p>Sem dados de vendas no período.</p>
+      <div className="h-[300px] w-full bg-white border border-black flex items-center justify-center text-black font-bold">
+        SEM DADOS
       </div>
     );
   }
@@ -30,20 +30,20 @@ export default function SalesChart({ data, loading }: SalesChartProps) {
       formatter: (params: any) => {
         const item = params[0];
         return `
-          <div class="font-medium text-gray-900 mb-1">${item.name}</div>
-          <div class="text-indigo-600 font-bold">
+          <div class="font-bold text-black mb-1 uppercase">${item.name}</div>
+          <div class="text-black font-mono">
             ${formatCurrency(item.value)}
           </div>
         `;
       },
-      backgroundColor: '#fff',
-      borderColor: '#e5e7eb',
+      backgroundColor: '#000',
+      borderColor: '#000',
       borderWidth: 1,
       textStyle: {
-        color: '#374151'
+        color: '#fff'
       },
       padding: [8, 12],
-      extraCssText: 'box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); border-radius: 8px;'
+      extraCssText: 'border-radius: 0px;'
     },
     grid: {
       left: '2%',
@@ -56,11 +56,12 @@ export default function SalesChart({ data, loading }: SalesChartProps) {
       type: 'category',
       boundaryGap: false,
       data: data.map(item => item.date),
-      axisLine: { show: false },
-      axisTick: { show: false },
+      axisLine: { show: true, lineStyle: { color: '#000' } },
+      axisTick: { show: true, lineStyle: { color: '#000' } },
       axisLabel: {
-        color: '#6b7280',
-        fontSize: 12,
+        color: '#000',
+        fontSize: 10,
+        fontWeight: 'bold',
         margin: 12
       }
     },
@@ -68,13 +69,14 @@ export default function SalesChart({ data, loading }: SalesChartProps) {
       type: 'value',
       splitLine: {
         lineStyle: {
-          color: '#f3f4f6',
+          color: '#e5e5e5',
           type: 'dashed'
         }
       },
       axisLabel: {
-        color: '#6b7280',
-        fontSize: 12,
+        color: '#000',
+        fontSize: 10,
+        fontWeight: 'bold',
         formatter: (value: number) => {
           if (value >= 1000) return `${(value / 1000).toFixed(0)}k`;
           return value;
@@ -85,29 +87,22 @@ export default function SalesChart({ data, loading }: SalesChartProps) {
       {
         name: 'Vendas',
         type: 'line',
-        smooth: true,
-        showSymbol: false,
-        symbolSize: 8,
+        smooth: false, // Sharp lines for brutalist look
+        showSymbol: true,
+        symbol: 'rect',
+        symbolSize: 6,
         itemStyle: {
-          color: '#4f46e5',
-          borderWidth: 2
+          color: '#000',
+          borderWidth: 2,
+          borderColor: '#fff'
         },
         lineStyle: {
-          width: 3,
-          color: '#4f46e5'
+          width: 2,
+          color: '#000'
         },
         areaStyle: {
-          color: {
-            type: 'linear',
-            x: 0,
-            y: 0,
-            x2: 0,
-            y2: 1,
-            colorStops: [
-              { offset: 0, color: 'rgba(79, 70, 229, 0.2)' },
-              { offset: 1, color: 'rgba(79, 70, 229, 0)' }
-            ]
-          }
+          color: '#000',
+          opacity: 0.1
         },
         data: data.map(item => item.value)
       }

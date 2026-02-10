@@ -10,7 +10,6 @@ import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Badge from '../components/ui/Badge';
 import { useForm } from 'react-hook-form';
-import { cn } from '../lib/utils';
 
 export default function Clients() {
   const { isClient, user, isSeller } = useAuth();
@@ -25,7 +24,7 @@ export default function Clients() {
 
   useEffect(() => {
     fetchClients();
-  }, [user, isSeller]); // Re-fetch if user context changes
+  }, [user, isSeller]);
 
   async function fetchClients() {
     try {
@@ -34,13 +33,11 @@ export default function Clients() {
         .select('*')
         .order('created_at', { ascending: false });
 
-      // STRICT FILTERING: If seller, only show their own clients
       if (isSeller && user) {
         query = query.eq('vendedor_id', user.id);
       }
 
       const { data, error } = await query;
-
       if (error) throw error;
       setClients(data || []);
     } catch (error: any) {
@@ -54,8 +51,6 @@ export default function Clients() {
   const onSubmit = async (data: Partial<Client>) => {
     try {
       const payload = { ...data };
-      
-      // Auto-assign seller ID if creating as a seller
       if (!editingClient && isSeller && user) {
         payload.vendedor_id = user.id;
       }
@@ -87,7 +82,7 @@ export default function Clients() {
       setClients(clients.filter(c => c.id !== id));
       toast.success('Cliente removido com sucesso.');
     } catch (error: any) {
-      toast.error('Erro ao excluir cliente. Verifique se existem pedidos vinculados.');
+      toast.error('Erro ao excluir cliente. Verifique pedidos vinculados.');
     }
   };
 
@@ -113,7 +108,7 @@ export default function Clients() {
     c.nome_fantasia.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  if (isClient) return <div className="p-8 text-center text-gray-500">Acesso restrito.</div>;
+  if (isClient) return <div className="p-8 text-center text-black font-bold uppercase">Acesso restrito.</div>;
 
   return (
     <div className="animate-in fade-in duration-500">
@@ -122,49 +117,49 @@ export default function Clients() {
         subtitle="Gerencie sua carteira de clientes e empresas parceiras."
         action={
           <Button onClick={() => openModal()} leftIcon={<Plus size={18} />}>
-            Nova Empresa
+            NOVA EMPRESA
           </Button>
         }
       />
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="p-5 border-b border-gray-100 bg-gray-50/30">
+      <div className="bg-white border-2 border-black shadow-sharp">
+        <div className="p-5 border-b-2 border-black bg-white">
           <Input 
-            placeholder="Buscar por Razão Social ou Fantasia..."
+            placeholder="BUSCAR POR RAZÃO SOCIAL OU FANTASIA..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             icon={<Search size={18} />}
-            className="max-w-md bg-white"
+            className="max-w-md"
           />
         </div>
 
         {loading ? (
           <div className="p-16 flex justify-center">
-            <Loader2 className="animate-spin text-indigo-600" size={32} />
+            <Loader2 className="animate-spin text-black" size={32} />
           </div>
         ) : filteredClients.length === 0 ? (
-          <div className="p-16 text-center flex flex-col items-center justify-center">
-            <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
-              {searchTerm ? <Search className="text-gray-300" size={32} /> : <UserX className="text-gray-300" size={32} />}
+          <div className="p-16 text-center flex flex-col items-center justify-center text-black">
+            <div className="w-16 h-16 bg-black text-white flex items-center justify-center mb-4 border-2 border-black">
+              {searchTerm ? <Search size={32} /> : <UserX size={32} />}
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            <h3 className="text-lg font-bold uppercase mb-2">
               {searchTerm ? 'Nenhum resultado encontrado' : 'Sua carteira está vazia'}
             </h3>
-            <p className="text-gray-500 max-w-sm mx-auto mb-6">
+            <p className="text-gray-600 max-w-sm mx-auto mb-6 font-medium">
               {searchTerm 
                 ? `Não encontramos empresas com o termo "${searchTerm}".` 
-                : 'Você ainda não possui empresas cadastradas na sua carteira. Comece adicionando seu primeiro cliente.'}
+                : 'Você ainda não possui empresas cadastradas.'}
             </p>
             {!searchTerm && (
               <Button onClick={() => openModal()} leftIcon={<Plus size={18} />}>
-                Cadastrar Primeira Empresa
+                CADASTRAR PRIMEIRA EMPRESA
               </Button>
             )}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-white text-gray-500 font-semibold border-b border-gray-100">
+              <thead className="bg-black text-white font-bold uppercase border-b-2 border-black">
                 <tr>
                   <th className="px-6 py-4">Empresa</th>
                   <th className="px-6 py-4">CNPJ</th>
@@ -172,26 +167,26 @@ export default function Clients() {
                   <th className="px-6 py-4 text-right">Ações</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y-2 divide-black">
                 {filteredClients.map((client) => (
-                  <tr key={client.id} className="hover:bg-gray-50/80 transition-colors">
+                  <tr key={client.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100">
+                        <div className="h-10 w-10 bg-white border border-black flex items-center justify-center text-black">
                           <Building2 size={20} />
                         </div>
                         <div>
-                          <p className="font-medium text-gray-900">{client.nome_fantasia}</p>
-                          <p className="text-xs text-gray-500">{client.razao_social}</p>
+                          <p className="font-bold text-black uppercase">{client.nome_fantasia}</p>
+                          <p className="text-xs text-gray-500 uppercase">{client.razao_social}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-gray-600 font-mono text-xs">
+                    <td className="px-6 py-4 text-black font-mono font-bold text-xs">
                       {client.cnpj || 'N/A'}
                     </td>
                     <td className="px-6 py-4">
                       <Badge variant={client.status === 'active' ? 'success' : 'neutral'}>
-                        {client.status === 'active' ? 'Ativo' : 'Inativo'}
+                        {client.status === 'active' ? 'ATIVO' : 'INATIVO'}
                       </Badge>
                     </td>
                     <td className="px-6 py-4 text-right">
@@ -200,7 +195,6 @@ export default function Clients() {
                           variant="secondary" 
                           size="icon" 
                           onClick={() => openModal(client)}
-                          title="Editar"
                           className="h-8 w-8"
                         >
                           <Edit2 size={14} />
@@ -209,8 +203,7 @@ export default function Clients() {
                           variant="ghost" 
                           size="icon" 
                           onClick={() => deleteClient(client.id)}
-                          title="Excluir"
-                          className="h-8 w-8 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                          className="h-8 w-8 hover:bg-black hover:text-white"
                         >
                           <Trash2 size={14} />
                         </Button>
@@ -227,7 +220,7 @@ export default function Clients() {
       <Modal
         isOpen={isModalOpen}
         onClose={closeModal}
-        title={editingClient ? 'Editar Cliente' : 'Novo Cliente'}
+        title={editingClient ? 'EDITAR CLIENTE' : 'NOVO CLIENTE'}
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -236,7 +229,7 @@ export default function Clients() {
                 label="Nome Fantasia"
                 {...register('nome_fantasia', { required: 'Nome Fantasia é obrigatório' })}
                 error={errors.nome_fantasia?.message}
-                placeholder="Ex: Mercado Central"
+                placeholder="EX: MERCADO CENTRAL"
                 icon={<Building2 size={18} />}
               />
             </div>
@@ -246,7 +239,7 @@ export default function Clients() {
                 label="Razão Social"
                 {...register('razao_social', { required: 'Razão Social é obrigatória' })}
                 error={errors.razao_social?.message}
-                placeholder="Ex: Mercado Central LTDA"
+                placeholder="EX: MERCADO CENTRAL LTDA"
                 icon={<FileText size={18} />}
               />
             </div>
@@ -268,17 +261,17 @@ export default function Clients() {
               {...register('status')}
               value="active"
               defaultChecked={!editingClient || editingClient.status === 'active'}
-              className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+              className="w-4 h-4 rounded-none border-black text-black focus:ring-black cursor-pointer"
             />
-            <label htmlFor="status" className="text-sm text-gray-700 cursor-pointer select-none">Cliente Ativo</label>
+            <label htmlFor="status" className="text-sm font-bold text-black cursor-pointer select-none uppercase">Cliente Ativo</label>
           </div>
 
-          <div className="flex justify-end gap-3 pt-6 border-t border-gray-100 mt-6">
+          <div className="flex justify-end gap-3 pt-6 border-t border-black mt-6">
             <Button type="button" variant="ghost" onClick={closeModal}>
-              Cancelar
+              CANCELAR
             </Button>
             <Button type="submit" isLoading={isSubmitting}>
-              {editingClient ? 'Salvar Alterações' : 'Salvar Cliente'}
+              {editingClient ? 'SALVAR ALTERAÇÕES' : 'SALVAR CLIENTE'}
             </Button>
           </div>
         </form>

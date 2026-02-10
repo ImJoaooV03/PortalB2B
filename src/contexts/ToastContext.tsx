@@ -28,8 +28,6 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.map(t => t.id === id ? { ...t, visible: false } : t));
-    
-    // Remove from DOM after animation
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 300);
@@ -38,8 +36,6 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const addToast = useCallback((message: string, type: ToastType, description?: string) => {
     const id = Math.random().toString(36).substring(2, 9);
     setToasts((prev) => [...prev, { id, message, description, type, visible: true }]);
-
-    // Auto remove
     setTimeout(() => {
       removeToast(id);
     }, 4000);
@@ -49,7 +45,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     success: (message: string, description?: string) => addToast(message, 'success', description),
     error: (message: string, description?: string) => addToast(message, 'error', description),
     info: (message: string, description?: string) => addToast(message, 'info', description),
-    cart: (productName: string) => addToast('Adicionado ao pedido', 'cart', `${productName} foi incluído no carrinho.`),
+    cart: (productName: string) => addToast('Adicionado', 'cart', `${productName}`),
   };
 
   return (
@@ -60,18 +56,17 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           <div
             key={t.id}
             className={cn(
-              "pointer-events-auto flex items-start gap-4 p-4 rounded-xl shadow-2xl border min-w-[340px] max-w-[400px] transition-all duration-300 transform",
+              "pointer-events-auto flex items-start gap-4 p-4 min-w-[300px] max-w-[400px] transition-all duration-300 transform border-2 border-black shadow-sharp bg-white",
               t.visible ? "translate-x-0 opacity-100" : "translate-x-full opacity-0",
-              "bg-white border-gray-100" // Base style matching the clean card aesthetic
+              t.type === 'error' && "border-black bg-white" // Keep consistent base
             )}
           >
-            {/* Icon Container */}
             <div className={cn(
-              "p-2 rounded-lg shrink-0 mt-0.5",
-              t.type === 'success' && "bg-green-50 text-green-600",
-              t.type === 'error' && "bg-red-50 text-red-600",
-              t.type === 'info' && "bg-blue-50 text-blue-600",
-              t.type === 'cart' && "bg-gray-900 text-white" // Matching the "Add" button style
+              "p-2 shrink-0 mt-0.5 border border-black",
+              t.type === 'success' && "bg-black text-white",
+              t.type === 'error' && "bg-white text-black",
+              t.type === 'info' && "bg-white text-black",
+              t.type === 'cart' && "bg-black text-white"
             )}>
               {t.type === 'success' && <CheckCircle2 size={20} />}
               {t.type === 'error' && <AlertCircle size={20} />}
@@ -79,25 +74,20 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               {t.type === 'cart' && <ShoppingBag size={20} />}
             </div>
 
-            {/* Content */}
             <div className="flex-1 min-w-0">
-              <h4 className={cn(
-                "text-sm font-bold",
-                t.type === 'error' ? "text-red-900" : "text-gray-900"
-              )}>
+              <h4 className="text-sm font-black uppercase text-black">
                 {t.message}
               </h4>
               {t.description && (
-                <p className="text-sm text-gray-500 mt-1 leading-relaxed">
+                <p className="text-sm text-black mt-1 font-medium">
                   {t.description}
                 </p>
               )}
             </div>
 
-            {/* Close Button */}
             <button 
               onClick={() => removeToast(t.id)}
-              className="text-gray-400 hover:text-gray-600 hover:bg-gray-50 p-1 rounded-md transition-colors -mr-1 -mt-1"
+              className="text-black hover:bg-black hover:text-white p-1 transition-colors -mr-1 -mt-1 border border-transparent hover:border-black"
             >
               <X size={16} />
             </button>

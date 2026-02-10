@@ -20,6 +20,7 @@ import { Link } from 'react-router-dom';
 import SalesChart from '../components/dashboard/SalesChart';
 import { subDays, format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import Button from '../components/ui/Button';
 
 export default function Dashboard() {
   const { profile, isAdmin, isSeller, isClient } = useAuth();
@@ -42,7 +43,6 @@ export default function Dashboard() {
       }
 
       try {
-        // 1. Fetch Orders for Stats & Chart
         const { data: orders } = await supabase
           .from('orders')
           .select('id, total_amount, status, created_at');
@@ -62,7 +62,6 @@ export default function Dashboard() {
           pendingCount: pending
         });
 
-        // Process Chart Data (Last 30 days)
         const last30Days = Array.from({ length: 30 }, (_, i) => {
           const d = subDays(new Date(), 29 - i);
           return format(d, 'yyyy-MM-dd');
@@ -81,7 +80,6 @@ export default function Dashboard() {
 
         setSalesData(chartData);
 
-        // 2. Fetch Recent Activity (Last 5 orders)
         const { data: recent } = await supabase
           .from('orders')
           .select('*, clients(nome_fantasia)')
@@ -90,7 +88,6 @@ export default function Dashboard() {
         
         setRecentOrders(recent || []);
 
-        // 3. Fetch Top Products (Aggregation)
         const { data: items } = await supabase
           .from('order_items')
           .select('quantity, products(name, sku)');
@@ -126,21 +123,17 @@ export default function Dashboard() {
     fetchData();
   }, [isClient]);
 
-  // ==========================================
-  // CLIENT VIEW (Refactored based on Image)
-  // ==========================================
   if (isClient) {
     const isLinked = !!profile?.client_id;
-    const firstName = profile?.full_name?.split(' ')[0].toLowerCase(); // Lowercase for style "jose"
+    const firstName = profile?.full_name?.split(' ')[0].toLowerCase();
 
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-180px)] animate-in fade-in slide-in-from-bottom-4 duration-700">
-        <div className="bg-white w-full max-w-3xl rounded-3xl shadow-sm border border-gray-100 p-8 md:p-16 text-center mx-auto">
+        <div className="bg-white w-full max-w-3xl border-2 border-black shadow-sharp p-8 md:p-16 text-center mx-auto">
           
-          {/* Icon Circle */}
           <div className={cn(
-            "w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-8 shadow-sm",
-            isLinked ? "bg-indigo-50 text-indigo-600" : "bg-orange-50 text-orange-600"
+            "w-24 h-24 flex items-center justify-center mx-auto mb-8 border-2 border-black",
+            isLinked ? "bg-black text-white" : "bg-white text-black"
           )}>
             {isLinked ? (
               <ShoppingBag size={42} strokeWidth={1.5} />
@@ -149,29 +142,27 @@ export default function Dashboard() {
             )}
           </div>
           
-          {/* Welcome Text */}
-          <h1 className="text-4xl font-bold text-gray-900 mb-4 tracking-tight">
-            Bem-vindo, <span className="capitalize">{firstName}</span>!
+          <h1 className="text-4xl font-black text-black mb-4 tracking-tighter uppercase">
+            Olá, <span className="capitalize">{firstName}</span>
           </h1>
 
           {isLinked ? (
             <>
-              <p className="text-gray-500 text-lg mb-10 max-w-xl mx-auto leading-relaxed">
-                Seu portal de compras exclusivo. Acesse o catálogo personalizado da sua empresa e faça pedidos com facilidade.
+              <p className="text-black text-lg mb-10 max-w-xl mx-auto font-medium">
+                SEU PORTAL DE COMPRAS EXCLUSIVO. ACESSE O CATÁLOGO E FAÇA PEDIDOS.
               </p>
               
-              {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
                 <Link 
                   to="/catalog"
-                  className="w-full sm:w-auto min-w-[200px] bg-indigo-600 text-white px-8 py-3.5 rounded-xl font-semibold hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 flex items-center justify-center gap-2.5"
+                  className="w-full sm:w-auto min-w-[200px] bg-black text-white border border-black px-8 py-3.5 font-bold hover:bg-white hover:text-black transition-all shadow-sharp hover:translate-y-0.5 hover:shadow-none flex items-center justify-center gap-2.5 uppercase tracking-wide"
                 >
                   <Package size={20} />
                   Ver Catálogo
                 </Link>
                 <Link 
                   to="/orders"
-                  className="w-full sm:w-auto min-w-[200px] bg-white text-gray-700 border border-gray-200 px-8 py-3.5 rounded-xl font-semibold hover:bg-gray-50 hover:border-gray-300 transition-all flex items-center justify-center gap-2.5 shadow-sm"
+                  className="w-full sm:w-auto min-w-[200px] bg-white text-black border border-black px-8 py-3.5 font-bold hover:bg-black hover:text-white transition-all shadow-sharp hover:translate-y-0.5 hover:shadow-none flex items-center justify-center gap-2.5 uppercase tracking-wide"
                 >
                   <Activity size={20} />
                   Meus Pedidos
@@ -180,13 +171,12 @@ export default function Dashboard() {
             </>
           ) : (
             <div className="max-w-md mx-auto mt-6">
-              <div className="bg-orange-50 border border-orange-100 rounded-2xl p-6 text-left shadow-sm">
-                <h3 className="font-semibold text-orange-800 mb-2 flex items-center gap-2">
+              <div className="bg-white border-2 border-black p-6 text-left">
+                <h3 className="font-bold text-black mb-2 flex items-center gap-2 uppercase">
                   <Clock size={18} /> Conta em Análise
                 </h3>
-                <p className="text-sm text-orange-700 leading-relaxed">
-                  Seu cadastro foi realizado com sucesso, mas sua conta ainda não está vinculada a uma empresa.
-                  Por favor, aguarde o administrador liberar seu acesso ao catálogo.
+                <p className="text-sm text-black leading-relaxed font-medium">
+                  Seu cadastro foi realizado. Aguarde a liberação do administrador.
                 </p>
               </div>
             </div>
@@ -196,109 +186,93 @@ export default function Dashboard() {
     );
   }
 
-  // ==========================================
-  // ADMIN & SELLER VIEW
-  // ==========================================
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">Visão Geral</h2>
-          <p className="text-gray-500">Acompanhe o desempenho do seu negócio em tempo real.</p>
+          <h2 className="text-2xl font-black text-black uppercase tracking-tight">Visão Geral</h2>
+          <p className="text-black font-medium text-sm">DESEMPENHO EM TEMPO REAL</p>
         </div>
         {(isAdmin || isSeller) && (
           <Link 
             to={isAdmin ? "/sales" : "/orders"}
-            className="text-sm font-medium text-indigo-600 hover:text-indigo-700 flex items-center gap-1 bg-indigo-50 px-4 py-2 rounded-lg transition-colors"
+            className="text-sm font-bold text-black hover:bg-black hover:text-white border border-black px-4 py-2 transition-colors flex items-center gap-2 uppercase"
           >
-            {isAdmin ? "Ir para Gestão de Vendas" : "Ver todos os pedidos"} <ArrowRight size={16} />
+            {isAdmin ? "Gestão de Vendas" : "Ver Pedidos"} <ArrowRight size={16} />
           </Link>
         )}
       </div>
 
-      {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
           title="Vendas Totais" 
           value={loading ? "..." : formatCurrency(stats.salesTotal)} 
           icon={DollarSign} 
-          color="bg-green-50 text-green-600"
-          trend={!loading && stats.salesTotal > 0 ? "Atualizado agora" : null}
         />
         <StatCard 
-          title="Pedidos Realizados" 
+          title="Pedidos" 
           value={loading ? "..." : stats.ordersCount.toString()} 
           icon={ShoppingBag} 
-          color="bg-blue-50 text-blue-600"
         />
         <StatCard 
-          title="Clientes Cadastrados" 
+          title="Clientes" 
           value={loading ? "..." : stats.clientsCount.toString()} 
           icon={Users} 
-          color="bg-purple-50 text-purple-600"
         />
         <StatCard 
-          title="Pedidos Pendentes" 
+          title="Pendentes" 
           value={loading ? "..." : stats.pendingCount.toString()} 
           icon={AlertCircle} 
-          color="bg-orange-50 text-orange-600"
           highlight={stats.pendingCount > 0}
         />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Main Column (Chart + Recent) */}
         <div className="lg:col-span-2 space-y-8">
           
-          {/* Sales Chart */}
-          <div className="bg-white rounded-xl border shadow-sm p-6">
-            <h3 className="font-semibold text-gray-900 mb-6 flex items-center gap-2">
-              <TrendingUp size={20} className="text-gray-400" />
-              Vendas nos Últimos 30 Dias
+          <div className="bg-white border-2 border-black p-6 shadow-sharp">
+            <h3 className="font-bold text-black mb-6 flex items-center gap-2 uppercase tracking-wide">
+              <TrendingUp size={20} />
+              Vendas (30 Dias)
             </h3>
             <SalesChart data={salesData} loading={loading} />
           </div>
 
-          {/* Recent Activity */}
-          <div className="bg-white rounded-xl border shadow-sm flex flex-col">
-            <div className="p-6 border-b flex justify-between items-center">
-              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                <Activity size={20} className="text-gray-400" />
+          <div className="bg-white border-2 border-black flex flex-col shadow-sharp">
+            <div className="p-6 border-b-2 border-black flex justify-between items-center">
+              <h3 className="font-bold text-black flex items-center gap-2 uppercase tracking-wide">
+                <Activity size={20} />
                 Últimos Pedidos
               </h3>
             </div>
             
             <div className="flex-1 overflow-hidden">
               {loading ? (
-                <div className="p-8 text-center text-gray-400">Carregando...</div>
+                <div className="p-8 text-center text-black font-medium">Carregando...</div>
               ) : recentOrders.length === 0 ? (
-                <div className="p-12 text-center text-gray-500">
+                <div className="p-12 text-center text-black">
                   <p>Nenhum pedido realizado ainda.</p>
                 </div>
               ) : (
-                <div className="divide-y divide-gray-100">
+                <div className="divide-y divide-black">
                   {recentOrders.map((order) => (
-                    <div key={order.id} className="p-4 hover:bg-gray-50 transition-colors flex items-center justify-between gap-4">
+                    <div key={order.id} className="p-4 hover:bg-black hover:text-white transition-colors flex items-center justify-between gap-4 group">
                       <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold text-xs">
+                        <div className="w-10 h-10 bg-black text-white group-hover:bg-white group-hover:text-black flex items-center justify-center font-bold text-xs border border-black">
                           {order.clients?.nome_fantasia?.substring(0, 2).toUpperCase() || 'CL'}
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-gray-900">
+                          <p className="text-sm font-bold uppercase">
                             {order.clients?.nome_fantasia || 'Cliente Desconhecido'}
                           </p>
-                          <p className="text-xs text-gray-500 flex items-center gap-1">
-                            <Clock size={10} /> {formatDate(order.created_at)} • #{order.id.slice(0, 8)}
+                          <p className="text-xs font-mono">
+                            {formatDate(order.created_at)} • #{order.id.slice(0, 8)}
                           </p>
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-bold text-gray-900">{formatCurrency(order.total_amount)}</p>
-                        <span className={cn(
-                          "text-[10px] font-bold uppercase px-2 py-0.5 rounded-full",
-                          order.status === 'enviado' ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600"
-                        )}>
+                        <p className="text-sm font-bold">{formatCurrency(order.total_amount)}</p>
+                        <span className="text-[10px] font-bold uppercase border border-current px-2 py-0.5">
                           {order.status}
                         </span>
                       </div>
@@ -307,38 +281,36 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
-            <div className="p-4 border-t bg-gray-50 rounded-b-xl text-center">
-              <Link to={isAdmin ? "/sales" : "/orders"} className="text-sm text-indigo-600 font-medium hover:underline">
-                {isAdmin ? "Ver gestão completa" : "Ver histórico completo"}
+            <div className="p-4 border-t-2 border-black bg-white text-center">
+              <Link to={isAdmin ? "/sales" : "/orders"} className="text-sm text-black font-bold hover:underline uppercase">
+                Ver Todos
               </Link>
             </div>
           </div>
         </div>
 
-        {/* Right Column */}
         <div className="space-y-6">
           
-          {/* Top Products Widget */}
-          <div className="bg-white rounded-xl border shadow-sm p-6">
-            <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <BarChart3 size={20} className="text-gray-400" />
-              Produtos Mais Vendidos
+          <div className="bg-white border-2 border-black p-6 shadow-sharp">
+            <h3 className="font-bold text-black mb-4 flex items-center gap-2 uppercase tracking-wide">
+              <BarChart3 size={20} />
+              Top Produtos
             </h3>
             {loading ? (
-              <div className="text-sm text-gray-400">Carregando...</div>
+              <div className="text-sm">Carregando...</div>
             ) : topProducts.length === 0 ? (
-              <div className="text-sm text-gray-500">Sem dados suficientes.</div>
+              <div className="text-sm">Sem dados suficientes.</div>
             ) : (
               <div className="space-y-4">
-                {topProducts.map((p, index) => (
+                {topProducts.map((p) => (
                   <div key={p.sku} className="space-y-1">
-                    <div className="flex justify-between text-sm">
-                      <span className="font-medium text-gray-700 truncate max-w-[180px]">{p.name}</span>
-                      <span className="text-gray-500">{p.totalQty} un.</span>
+                    <div className="flex justify-between text-sm font-medium">
+                      <span className="truncate max-w-[180px]">{p.name}</span>
+                      <span>{p.totalQty} un.</span>
                     </div>
-                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-2 bg-gray-200 w-full">
                       <div 
-                        className="h-full bg-indigo-500 rounded-full"
+                        className="h-full bg-black"
                         style={{ width: `${(p.totalQty / topProducts[0].totalQty) * 100}%` }}
                       ></div>
                     </div>
@@ -348,9 +320,8 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Quick Actions */}
-          <div className="bg-white rounded-xl border shadow-sm p-6">
-            <h3 className="font-semibold text-gray-900 mb-4">Ações Rápidas</h3>
+          <div className="bg-white border-2 border-black p-6 shadow-sharp">
+            <h3 className="font-bold text-black mb-4 uppercase tracking-wide">Ações Rápidas</h3>
             <div className="space-y-3">
               <QuickAction 
                 to="/clients" 
@@ -364,15 +335,14 @@ export default function Dashboard() {
               />
               <QuickAction 
                 to="/price-tables" 
-                title="Criar Tabela de Preço" 
+                title="Criar Tabela" 
                 icon={DollarSign}
               />
               {(isAdmin || isSeller) && (
                 <QuickAction 
                   to="/users" 
-                  title={isAdmin ? "Gerenciar Time" : "Cadastrar Usuário"} 
+                  title={isAdmin ? "Gerenciar Time" : "Novo Usuário"} 
                   icon={UserPlus}
-                  variant="admin"
                 />
               )}
             </div>
@@ -383,49 +353,36 @@ export default function Dashboard() {
   );
 }
 
-function StatCard({ title, value, icon: Icon, color, trend, highlight }: any) {
+function StatCard({ title, value, icon: Icon, highlight }: any) {
   return (
     <div className={cn(
-      "bg-white p-6 rounded-xl border shadow-sm transition-all hover:shadow-md",
-      highlight && "border-orange-200 bg-orange-50/30"
+      "bg-white p-6 border-2 border-black shadow-sharp transition-all hover:-translate-y-1",
+      highlight && "bg-black text-white"
     )}>
       <div className="flex justify-between items-start mb-4">
-        <div className={cn("p-3 rounded-lg", color)}>
+        <div className={cn("p-2 border-2", highlight ? "border-white bg-white text-black" : "border-black bg-black text-white")}>
           <Icon size={24} />
         </div>
-        {trend && (
-          <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-1 rounded-full flex items-center gap-1">
-            <TrendingUp size={12} />
-          </span>
-        )}
       </div>
       <div>
-        <p className="text-sm text-gray-500 font-medium mb-1">{title}</p>
-        <p className="text-2xl font-bold text-gray-900">{value}</p>
+        <p className={cn("text-sm font-bold uppercase mb-1", highlight ? "text-gray-300" : "text-gray-600")}>{title}</p>
+        <p className="text-2xl font-black">{value}</p>
       </div>
     </div>
   );
 }
 
-function QuickAction({ to, title, icon: Icon, variant }: any) {
+function QuickAction({ to, title, icon: Icon }: any) {
   return (
     <Link 
       to={to} 
-      className={cn(
-        "flex items-center gap-3 p-3 rounded-lg border transition-all hover:shadow-sm",
-        variant === 'admin' 
-          ? "bg-purple-50 border-purple-100 text-purple-700 hover:bg-purple-100" 
-          : "bg-white border-gray-100 text-gray-700 hover:border-indigo-200 hover:text-indigo-600"
-      )}
+      className="flex items-center gap-3 p-3 border border-black hover:bg-black hover:text-white transition-all group"
     >
-      <div className={cn(
-        "w-8 h-8 rounded-lg flex items-center justify-center",
-        variant === 'admin' ? "bg-purple-200/50" : "bg-gray-100"
-      )}>
+      <div className="w-8 h-8 flex items-center justify-center bg-black text-white group-hover:bg-white group-hover:text-black border border-black">
         <Icon size={16} />
       </div>
-      <span className="font-medium text-sm">{title}</span>
-      <ArrowRight size={14} className="ml-auto opacity-50" />
+      <span className="font-bold text-sm uppercase">{title}</span>
+      <ArrowRight size={14} className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
     </Link>
   );
 }

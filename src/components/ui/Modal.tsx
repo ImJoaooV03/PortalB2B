@@ -32,19 +32,19 @@ export default function Modal({ isOpen, onClose, title, children }: ModalProps) 
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm transition-all">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-white/80 backdrop-blur-sm transition-all">
       <div 
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-200 border border-gray-100"
+        className="bg-white rounded-none shadow-sharp w-full max-w-2xl max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-200 border-2 border-black"
         role="dialog"
         aria-modal="true"
       >
-        <div className="flex items-center justify-between px-8 py-6 border-b border-gray-100">
-          <h2 className="text-xl font-bold text-gray-900 tracking-tight">{title}</h2>
+        <div className="flex items-center justify-between px-8 py-6 border-b-2 border-black">
+          <h2 className="text-xl font-black text-black tracking-tight uppercase">{title}</h2>
           <button 
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 hover:bg-gray-50 p-2 rounded-lg transition-all duration-200"
+            className="text-black hover:bg-black hover:text-white p-2 transition-all duration-200 border border-transparent hover:border-black"
           >
-            <X size={20} />
+            <X size={24} />
           </button>
         </div>
         

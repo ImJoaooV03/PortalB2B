@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Lock, Mail, AlertCircle, CheckCircle, Building2 } from 'lucide-react';
+import { Lock, Mail, AlertCircle, CheckCircle } from 'lucide-react';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 
@@ -23,10 +23,8 @@ export default function Login() {
   }, [session, navigate]);
 
   const translateError = (message: string) => {
-    if (message.includes('Database error')) return 'Erro interno ao criar perfil. Tente outro email ou contate o suporte.';
+    if (message.includes('Database error')) return 'Erro interno ao criar perfil.';
     if (message.includes('Invalid login credentials')) return 'Email ou senha incorretos.';
-    if (message.includes('User already registered')) return 'Este email já está cadastrado.';
-    if (message.includes('Password should be')) return 'A senha deve ter pelo menos 6 caracteres.';
     return message;
   };
 
@@ -50,7 +48,7 @@ export default function Login() {
         });
         
         if (signUpError) throw signUpError;
-        setSuccessMessage('Conta criada com sucesso! Entre com seus dados.');
+        setSuccessMessage('Conta criada com sucesso!');
         setIsSignUp(false);
       } else {
         const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -70,44 +68,49 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-gray-100">
+    <div className="min-h-screen bg-white flex items-center justify-center p-4">
+      <div className="bg-white p-8 w-full max-w-md border-2 border-black shadow-sharp">
         <div className="text-center mb-8">
-          <div className="w-14 h-14 bg-indigo-600 rounded-xl flex items-center justify-center text-white mx-auto mb-4 shadow-lg transform -rotate-3">
-            <Building2 size={28} />
+          <div className="w-full flex items-center justify-center mb-6">
+            <img 
+              src="https://images.dualite.app/ab2a4a60-cf58-4ef8-ad02-2ec22f8431aa/group-bb75c517-4a93-46f3-bda1-9b5ada908173.webp" 
+              alt="Objetivus Logo" 
+              className="h-20 w-auto object-contain"
+            />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Portal B2B</h1>
-          <p className="text-gray-500 mt-2 text-sm">Acesso exclusivo para parceiros</p>
+          <p className="text-black font-medium mt-2 text-sm uppercase tracking-widest border-b border-black pb-4 inline-block">
+            Acesso Parceiros
+          </p>
         </div>
 
         {error && (
-          <div className="bg-red-50 border border-red-100 p-4 mb-6 rounded-lg flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
-            <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={18} />
+          <div className="bg-white border-2 border-black p-4 mb-6 flex items-start gap-3">
+            <AlertCircle className="text-black shrink-0 mt-0.5" size={18} />
             <div>
-              <h3 className="text-sm font-medium text-red-800">Atenção</h3>
-              <p className="text-xs text-red-700 mt-1">{error}</p>
+              <h3 className="text-sm font-bold text-black uppercase">Erro</h3>
+              <p className="text-xs text-black mt-1">{error}</p>
             </div>
           </div>
         )}
 
         {successMessage && (
-          <div className="bg-green-50 border border-green-100 p-4 mb-6 rounded-lg flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
-            <CheckCircle className="text-green-500 shrink-0 mt-0.5" size={18} />
+          <div className="bg-black text-white p-4 mb-6 flex items-start gap-3">
+            <CheckCircle className="text-white shrink-0 mt-0.5" size={18} />
             <div>
-              <h3 className="text-sm font-medium text-green-800">Sucesso!</h3>
-              <p className="text-xs text-green-700 mt-1">{successMessage}</p>
+              <h3 className="text-sm font-bold uppercase">Sucesso</h3>
+              <p className="text-xs mt-1">{successMessage}</p>
             </div>
           </div>
         )}
 
-        <form onSubmit={handleAuth} className="space-y-5">
+        <form onSubmit={handleAuth} className="space-y-6">
           <Input
             label="Email Corporativo"
             type="email"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="nome@empresa.com.br"
+            placeholder="NOME@EMPRESA.COM.BR"
             icon={<Mail size={18} />}
           />
 
@@ -125,23 +128,23 @@ export default function Login() {
           <Button
             type="submit"
             isLoading={loading}
-            className="w-full text-base"
+            className="w-full text-base h-12"
             size="lg"
           >
-            {isSignUp ? 'Cadastrar Empresa' : 'Acessar Portal'}
+            {isSignUp ? 'CADASTRAR EMPRESA' : 'ENTRAR NO PORTAL'}
           </Button>
         </form>
 
-        <div className="mt-8 pt-6 border-t border-gray-100 text-center">
+        <div className="mt-8 pt-6 border-t border-black text-center">
           <button 
             onClick={() => {
               setIsSignUp(!isSignUp);
               setError(null);
               setSuccessMessage(null);
             }}
-            className="text-sm text-indigo-600 hover:text-indigo-800 font-medium transition-colors"
+            className="text-sm text-black font-bold hover:underline uppercase tracking-wide"
           >
-            {isSignUp ? 'Já possui cadastro? Faça login' : 'Não tem acesso? Solicite seu cadastro'}
+            {isSignUp ? 'Já possui cadastro? Entrar' : 'Solicitar Cadastro'}
           </button>
         </div>
       </div>

@@ -8,19 +8,20 @@ interface BadgeProps {
 }
 
 export default function Badge({ children, variant = 'default', className }: BadgeProps) {
+  // In monochrome, we distinguish by fill vs outline
   const variants = {
-    default: 'bg-indigo-50 text-indigo-700 border-indigo-100',
-    success: 'bg-green-50 text-green-700 border-green-100',
-    warning: 'bg-orange-50 text-orange-700 border-orange-100',
-    danger: 'bg-red-50 text-red-700 border-red-100',
-    info: 'bg-blue-50 text-blue-700 border-blue-100',
-    neutral: 'bg-gray-100 text-gray-700 border-gray-200',
+    default: 'bg-black text-white border border-black',
+    success: 'bg-black text-white border border-black', // Solid for positive
+    warning: 'bg-white text-black border border-black border-dashed', // Dashed for warning
+    danger: 'bg-white text-black border border-black font-bold', // Bold for danger
+    info: 'bg-white text-black border border-black',
+    neutral: 'bg-white text-black border border-black',
   };
 
   return (
     <span
       className={cn(
-        'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border',
+        'inline-flex items-center px-2.5 py-0.5 rounded-none text-xs font-medium',
         variants[variant],
         className
       )}

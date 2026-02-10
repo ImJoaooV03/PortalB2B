@@ -6,7 +6,7 @@ import { Plus, Search, Edit2, Trash2, Package, Image as ImageIcon, Loader2 } fro
 import Modal from '../components/ui/Modal';
 import ImageUpload from '../components/ui/ImageUpload';
 import { useForm } from 'react-hook-form';
-import { cn, formatCurrency } from '../lib/utils';
+import { cn } from '../lib/utils';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Badge from '../components/ui/Badge';
@@ -20,11 +20,9 @@ export default function Products() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // State for file upload
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imageRemoved, setImageRemoved] = useState(false);
 
-  // Form handling
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<Partial<Product>>();
 
   useEffect(() => {
@@ -72,7 +70,6 @@ export default function Products() {
     try {
       let imageUrl = data.image;
 
-      // Handle Image Upload logic
       if (selectedFile) {
         const uploadedUrl = await uploadImage(selectedFile);
         if (uploadedUrl) imageUrl = uploadedUrl;
@@ -83,15 +80,10 @@ export default function Products() {
       const payload = { ...data, image: imageUrl };
 
       if (editingProduct) {
-        const { error } = await supabase
-          .from('products')
-          .update(payload)
-          .eq('id', editingProduct.id);
+        const { error } = await supabase.from('products').update(payload).eq('id', editingProduct.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase
-          .from('products')
-          .insert([{ ...payload, status: 'active' }]);
+        const { error } = await supabase.from('products').insert([{ ...payload, status: 'active' }]);
         if (error) throw error;
       }
       
@@ -99,13 +91,12 @@ export default function Products() {
       closeModal();
     } catch (error) {
       console.error('Error saving product:', error);
-      alert('Erro ao salvar produto. Verifique os dados.');
+      alert('Erro ao salvar produto.');
     }
   };
 
   const deleteProduct = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir este produto?')) return;
-    
     try {
       const { error } = await supabase.from('products').delete().eq('id', id);
       if (error) throw error;
@@ -119,7 +110,6 @@ export default function Products() {
   const openModal = (product?: Product) => {
     setSelectedFile(null);
     setImageRemoved(false);
-    
     if (product) {
       setEditingProduct(product);
       reset(product);
@@ -143,9 +133,7 @@ export default function Products() {
     p.sku.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  if (isClient) {
-    return <div className="p-8 text-center text-gray-500">Acesso restrito.</div>;
-  }
+  if (isClient) return <div className="p-8 text-center text-black font-bold uppercase">Acesso restrito.</div>;
 
   return (
     <div className="animate-in fade-in duration-500">
@@ -154,35 +142,37 @@ export default function Products() {
         subtitle="Gerencie seu catálogo de produtos"
         action={
           <Button onClick={() => openModal()} leftIcon={<Plus size={18} />}>
-            Novo Produto
+            NOVO PRODUTO
           </Button>
         }
       />
 
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <div className="p-5 border-b border-gray-100 bg-gray-50/30">
+      <div className="bg-white border-2 border-black shadow-sharp">
+        <div className="p-5 border-b-2 border-black bg-white">
           <Input 
-            placeholder="Buscar por nome ou SKU..."
+            placeholder="BUSCAR POR NOME OU SKU..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             icon={<Search size={18} />}
-            className="max-w-md bg-white"
+            className="max-w-md"
           />
         </div>
 
         {loading ? (
           <div className="p-16 flex justify-center">
-            <Loader2 className="animate-spin text-indigo-600" size={32} />
+            <Loader2 className="animate-spin text-black" size={32} />
           </div>
         ) : filteredProducts.length === 0 ? (
-          <div className="p-16 text-center text-gray-500">
-            <Package className="mx-auto h-12 w-12 text-gray-300 mb-3" />
-            <p>Nenhum produto encontrado.</p>
+          <div className="p-16 text-center text-black">
+            <div className="w-16 h-16 bg-black text-white flex items-center justify-center mx-auto mb-4 border-2 border-black">
+              <Package size={32} />
+            </div>
+            <p className="font-bold uppercase tracking-wide">Nenhum produto encontrado</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-white text-gray-500 font-semibold border-b border-gray-100">
+              <thead className="bg-black text-white font-bold uppercase border-b-2 border-black">
                 <tr>
                   <th className="px-6 py-4">Produto</th>
                   <th className="px-6 py-4">SKU</th>
@@ -190,28 +180,28 @@ export default function Products() {
                   <th className="px-6 py-4 text-right">Ações</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y-2 divide-black">
                 {filteredProducts.map((product) => (
-                  <tr key={product.id} className="hover:bg-gray-50/80 transition-colors">
+                  <tr key={product.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-4">
-                        <div className="h-12 w-12 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden border shrink-0">
+                        <div className="h-12 w-12 bg-white border-2 border-black flex items-center justify-center overflow-hidden shrink-0 p-0.5">
                           {product.image ? (
-                            <img src={product.image} alt={product.name} className="h-full w-full object-cover" />
+                            <img src={product.image} alt={product.name} className="h-full w-full object-contain grayscale" />
                           ) : (
-                            <ImageIcon className="text-gray-400" size={20} />
+                            <ImageIcon className="text-gray-300" size={20} />
                           )}
                         </div>
                         <div>
-                          <p className="font-medium text-gray-900">{product.name}</p>
-                          <p className="text-xs text-gray-500 truncate max-w-[200px]">{product.description}</p>
+                          <p className="font-bold text-black uppercase">{product.name}</p>
+                          <p className="text-xs text-gray-500 truncate max-w-[200px] uppercase">{product.description}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-gray-600 font-mono text-xs">{product.sku}</td>
+                    <td className="px-6 py-4 text-black font-mono font-bold text-xs">{product.sku}</td>
                     <td className="px-6 py-4">
                       <Badge variant={product.status === 'active' ? 'success' : 'neutral'}>
-                        {product.status === 'active' ? 'Ativo' : 'Inativo'}
+                        {product.status === 'active' ? 'ATIVO' : 'INATIVO'}
                       </Badge>
                     </td>
                     <td className="px-6 py-4 text-right">
@@ -228,7 +218,7 @@ export default function Products() {
                           variant="ghost" 
                           size="icon" 
                           onClick={() => deleteProduct(product.id)}
-                          className="h-8 w-8 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                          className="h-8 w-8 hover:bg-black hover:text-white"
                         >
                           <Trash2 size={14} />
                         </Button>
@@ -245,7 +235,7 @@ export default function Products() {
       <Modal
         isOpen={isModalOpen}
         onClose={closeModal}
-        title={editingProduct ? 'Editar Produto' : 'Novo Produto'}
+        title={editingProduct ? 'EDITAR PRODUTO' : 'NOVO PRODUTO'}
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -254,7 +244,7 @@ export default function Products() {
                 label="Nome do Produto"
                 {...register('name', { required: 'Nome é obrigatório' })}
                 error={errors.name?.message}
-                placeholder="Ex: Cadeira Ergonomica"
+                placeholder="EX: CADEIRA ERGONÔMICA"
               />
             </div>
             
@@ -263,22 +253,21 @@ export default function Products() {
                 label="SKU"
                 {...register('sku', { required: 'SKU é obrigatório' })}
                 error={errors.sku?.message}
-                placeholder="Ex: CAD-001"
+                placeholder="EX: CAD-001"
               />
             </div>
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700 block">Descrição</label>
+            <label className="text-sm font-bold text-black block uppercase">Descrição</label>
             <textarea
               {...register('description')}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none resize-none text-sm"
-              placeholder="Detalhes do produto..."
+              className="w-full px-3 py-2 border border-black rounded-none focus:ring-1 focus:ring-black focus:border-black outline-none resize-none text-sm"
+              placeholder="DETALHES DO PRODUTO..."
             />
           </div>
 
-          {/* New Drag and Drop Image Upload */}
           <ImageUpload 
             value={editingProduct?.image}
             onChange={(file) => {
@@ -298,17 +287,17 @@ export default function Products() {
               {...register('status')}
               value="active"
               defaultChecked={!editingProduct || editingProduct.status === 'active'}
-              className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+              className="w-4 h-4 rounded-none border-black text-black focus:ring-black cursor-pointer"
             />
-            <label htmlFor="status" className="text-sm text-gray-700 cursor-pointer select-none">Produto Ativo</label>
+            <label htmlFor="status" className="text-sm font-bold text-black cursor-pointer select-none uppercase">Produto Ativo</label>
           </div>
 
-          <div className="flex justify-end gap-3 pt-6 border-t border-gray-100 mt-6">
+          <div className="flex justify-end gap-3 pt-6 border-t border-black mt-6">
             <Button type="button" variant="ghost" onClick={closeModal}>
-              Cancelar
+              CANCELAR
             </Button>
             <Button type="submit" isLoading={isSubmitting}>
-              {editingProduct ? 'Salvar Alterações' : 'Salvar Produto'}
+              {editingProduct ? 'SALVAR ALTERAÇÕES' : 'SALVAR PRODUTO'}
             </Button>
           </div>
         </form>

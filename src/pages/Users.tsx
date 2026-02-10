@@ -13,7 +13,6 @@ import Badge from '../components/ui/Badge';
 import { useForm } from 'react-hook-form';
 import { cn } from '../lib/utils';
 
-// Temporary client configuration
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -46,7 +45,7 @@ export default function Users() {
   const selectedRole = watch('role');
   const password = watch('password');
 
-  useEffect(() => { fetchData(); }, [user, isSeller]); // Re-fetch if user context changes
+  useEffect(() => { fetchData(); }, [user, isSeller]);
   useEffect(() => {
     if (isSeller && !editingUser && isModalOpen) setValue('role', 'cliente');
   }, [isSeller, editingUser, isModalOpen, setValue]);
@@ -54,31 +53,21 @@ export default function Users() {
   async function fetchData() {
     setLoading(true);
     try {
-      // 1. Fetch Clients (Companies)
-      // Strict Filter: Sellers only fetch their own clients
       let clientsQuery = supabase.from('clients').select('*').eq('status', 'active');
-      
       if (isSeller && user) {
         clientsQuery = clientsQuery.eq('vendedor_id', user.id);
       }
-      
       const { data: clientsData, error: clientsError } = await clientsQuery;
       if (clientsError) throw clientsError;
-      
-      const fetchedClients = clientsData || [];
-      setClients(fetchedClients);
+      setClients(clientsData || []);
 
-      // 2. Fetch Users (Profiles)
-      // We fetch all profiles first, then filter in memory for strict safety
       const { data: usersData, error: usersError } = await supabase
         .from('profiles')
         .select('*')
         .order('created_at', { ascending: false });
       if (usersError) throw usersError;
-
       setUsers(usersData || []);
     } catch (error: any) {
-      console.error('Error:', error);
       toast.error('Erro ao carregar dados.');
     } finally {
       setLoading(false);
@@ -145,21 +134,13 @@ export default function Users() {
 
   const closeModal = () => { setIsModalOpen(false); setEditingUser(null); reset(); };
 
-  // STRICT FILTERING LOGIC
   const visibleUsers = users.filter(u => {
     if (isAdmin) return true;
-    
     if (isSeller) {
-      // 1. Must be a client role
       if (u.role !== 'cliente') return false;
-      
-      // 2. Must be linked to a company
       if (!u.client_id) return false;
-      
-      // 3. That company must belong to the seller (exist in fetchedClients)
       return clients.some(c => c.id === u.client_id);
     }
-    
     return false;
   });
 
@@ -168,7 +149,7 @@ export default function Users() {
     (u.full_name?.toLowerCase() || '').includes(searchTerm.toLowerCase())
   );
 
-  if (!isAdmin && !isSeller) return <div className="p-8 text-center text-gray-500">Acesso restrito.</div>;
+  if (!isAdmin && !isSeller) return <div className="p-8 text-center text-black font-bold uppercase">Acesso restrito.</div>;
 
   return (
     <div className="animate-in fade-in duration-500">
@@ -177,52 +158,44 @@ export default function Users() {
         subtitle="Gerencie os usuários e permissões de acesso ao portal."
         action={
           <Button onClick={() => openModal()} leftIcon={<UserPlus size={18} />}>
-            {isAdmin ? 'Novo Membro' : 'Novo Cliente'}
+            {isAdmin ? 'NOVO MEMBRO' : 'NOVO CLIENTE'}
           </Button>
         }
       />
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="p-5 border-b border-gray-100 bg-gray-50/30">
+      <div className="bg-white border-2 border-black shadow-sharp">
+        <div className="p-5 border-b-2 border-black bg-white">
           <Input 
-            placeholder="Buscar por nome ou e-mail..."
+            placeholder="BUSCAR POR NOME OU E-MAIL..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             icon={<Search size={18} />}
-            className="max-w-md bg-white"
+            className="max-w-md"
           />
         </div>
 
         {loading ? (
-          <div className="p-16 flex flex-col items-center justify-center text-gray-400">
-            <Loader2 className="animate-spin text-indigo-600 mb-4" size={32} />
-            <p className="text-sm">Carregando usuários...</p>
+          <div className="p-16 flex justify-center">
+            <Loader2 className="animate-spin text-black" size={32} />
           </div>
         ) : filteredUsers.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-            <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
-              {searchTerm ? <Search className="text-gray-300" size={32} /> : <UserX className="text-gray-300" size={32} />}
+          <div className="p-16 text-center flex flex-col items-center justify-center text-black">
+            <div className="w-16 h-16 bg-black text-white flex items-center justify-center mb-4 border-2 border-black">
+              {searchTerm ? <Search size={32} /> : <UserX size={32} />}
             </div>
-            <h3 className="text-lg font-semibold text-gray-900">
+            <h3 className="text-lg font-bold uppercase mb-2">
               {searchTerm ? 'Nenhum usuário encontrado' : 'Nenhum usuário vinculado'}
             </h3>
-            <p className="text-gray-500 text-sm mt-1 max-w-sm">
-              {searchTerm 
-                ? 'Tente buscar por outro termo.' 
-                : isSeller 
-                  ? 'Você ainda não possui usuários vinculados às suas empresas. Cadastre um novo cliente ou vincule um existente.'
-                  : 'Nenhum registro encontrado.'}
-            </p>
             {!searchTerm && (
               <Button onClick={() => openModal()} className="mt-6" leftIcon={<UserPlus size={18} />}>
-                Cadastrar Usuário
+                CADASTRAR USUÁRIO
               </Button>
             )}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-white text-gray-500 font-semibold border-b border-gray-100">
+              <thead className="bg-black text-white font-bold uppercase border-b-2 border-black">
                 <tr>
                   <th className="px-6 py-4 w-[35%]">Usuário</th>
                   <th className="px-6 py-4 w-[20%]">Contato</th>
@@ -231,22 +204,22 @@ export default function Users() {
                   <th className="px-6 py-4 text-right w-[10%]">Ações</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y-2 divide-black">
                 {filteredUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50/80 transition-colors group">
+                  <tr key={user.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-4">
-                        <div className="h-10 w-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold text-sm border border-indigo-100 shrink-0">
+                        <div className="h-10 w-10 bg-white border border-black flex items-center justify-center text-black font-bold text-sm shrink-0">
                           {user.full_name?.charAt(0).toUpperCase() || user.email.charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <p className="font-semibold text-gray-900 truncate">{user.full_name || 'Sem nome'}</p>
-                          <p className="text-xs text-gray-500 font-medium truncate">{user.email}</p>
+                          <p className="font-bold text-black truncate uppercase">{user.full_name || 'SEM NOME'}</p>
+                          <p className="text-xs text-gray-600 font-medium truncate uppercase">{user.email}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-gray-600">
-                      {user.phone || <span className="text-gray-400 text-xs italic">Não informado</span>}
+                    <td className="px-6 py-4 text-black font-medium">
+                      {user.phone || '-'}
                     </td>
                     <td className="px-6 py-4">
                       <Badge 
@@ -256,19 +229,19 @@ export default function Users() {
                           'success'
                         }
                       >
-                        {user.role}
+                        {user.role.toUpperCase()}
                       </Badge>
                     </td>
                     <td className="px-6 py-4">
                       {user.client_id ? (
-                        <div className="flex items-center gap-2 text-gray-700 bg-gray-100/50 px-2 py-1 rounded-md w-fit border border-gray-200">
-                          <Building2 size={12} className="text-gray-400" />
-                          <span className="font-medium text-xs truncate max-w-[120px]">
-                            {clients.find(c => c.id === user.client_id)?.nome_fantasia || 'Empresa ID...'}
+                        <div className="flex items-center gap-2 text-black bg-white px-2 py-1 border border-black w-fit">
+                          <Building2 size={12} />
+                          <span className="font-bold text-xs truncate max-w-[120px] uppercase">
+                            {clients.find(c => c.id === user.client_id)?.nome_fantasia || '...'}
                           </span>
                         </div>
                       ) : (
-                        <span className="text-gray-400 text-xs italic">Não vinculado</span>
+                        <span className="text-gray-400 text-xs italic uppercase">NÃO VINCULADO</span>
                       )}
                     </td>
                     <td className="px-6 py-4 text-right">
@@ -278,7 +251,7 @@ export default function Users() {
                         onClick={() => openModal(user)}
                         leftIcon={<Edit2 size={14} />}
                       >
-                        Editar
+                        EDITAR
                       </Button>
                     </td>
                   </tr>
@@ -292,7 +265,7 @@ export default function Users() {
       <Modal
         isOpen={isModalOpen}
         onClose={closeModal}
-        title={editingUser ? "Editar Usuário" : "Novo Cadastro"}
+        title={editingUser ? "EDITAR USUÁRIO" : "NOVO CADASTRO"}
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -301,7 +274,7 @@ export default function Users() {
                 label="Nome Completo"
                 {...register('full_name', { required: 'Nome é obrigatório' })}
                 error={errors.full_name?.message}
-                placeholder="Ex: João Silva"
+                placeholder="EX: JOÃO SILVA"
                 icon={<User size={18} />}
               />
             </div>
@@ -312,7 +285,7 @@ export default function Users() {
                 {...register('email', { required: 'Email é obrigatório' })}
                 disabled={!!editingUser}
                 error={errors.email?.message}
-                placeholder="nome@empresa.com"
+                placeholder="NOME@EMPRESA.COM"
                 icon={<Mail size={18} />}
               />
             </div>
@@ -351,59 +324,52 @@ export default function Users() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700 block mb-1.5">Função</label>
-              <div className="relative">
-                <select
-                  {...register('role')}
-                  disabled={isSeller}
-                  className={cn(
-                    "flex h-10 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500",
-                    isSeller && "bg-gray-100 cursor-not-allowed"
-                  )}
-                >
-                  {isAdmin && <option value="admin">Administrador</option>}
-                  {isAdmin && <option value="vendedor">Vendedor</option>}
-                  <option value="cliente">Cliente</option>
-                </select>
-              </div>
+              <label className="text-sm font-bold text-black block mb-1.5 uppercase">Função</label>
+              <select
+                {...register('role')}
+                disabled={isSeller}
+                className={cn(
+                  "flex h-10 w-full rounded-none border border-black bg-white px-3 py-2 text-sm text-black focus:outline-none focus:ring-1 focus:ring-black",
+                  isSeller && "bg-gray-100 cursor-not-allowed text-gray-500"
+                )}
+              >
+                {isAdmin && <option value="admin">ADMINISTRADOR</option>}
+                {isAdmin && <option value="vendedor">VENDEDOR</option>}
+                <option value="cliente">CLIENTE</option>
+              </select>
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <label className={cn("text-sm font-medium block mb-1.5", selectedRole === 'cliente' ? "text-gray-700" : "text-gray-300")}>
-                Vincular Empresa <span className={selectedRole === 'cliente' ? "text-red-500" : "hidden"}>*</span>
+              <label className={cn("text-sm font-bold block mb-1.5 uppercase", selectedRole === 'cliente' ? "text-black" : "text-gray-300")}>
+                Vincular Empresa <span className={selectedRole === 'cliente' ? "text-black" : "hidden"}>*</span>
               </label>
               <div className="relative">
                 <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                  <Building2 size={18} className={cn(selectedRole === 'cliente' ? "text-gray-400" : "text-gray-200")} />
+                  <Building2 size={18} className={cn(selectedRole === 'cliente' ? "text-black" : "text-gray-200")} />
                 </div>
                 <select
                   {...register('client_id', { required: selectedRole === 'cliente' })}
                   disabled={selectedRole !== 'cliente'}
                   className={cn(
-                    "flex h-10 w-full rounded-lg border pl-10 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20",
+                    "flex h-10 w-full rounded-none border pl-10 pr-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-black",
                     selectedRole === 'cliente' 
-                      ? "border-gray-200 bg-white text-gray-900 focus:border-indigo-500" 
-                      : "border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed"
+                      ? "border-black bg-white text-black" 
+                      : "border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed"
                   )}
                 >
-                  <option value="">Selecione uma empresa...</option>
-                  {clients.map(c => <option key={c.id} value={c.id}>{c.nome_fantasia}</option>)}
+                  <option value="">SELECIONE UMA EMPRESA...</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.nome_fantasia.toUpperCase()}</option>)}
                 </select>
               </div>
-              {isSeller && clients.length === 0 && (
-                 <p className="text-xs text-orange-500 mt-1">
-                   Você não possui empresas cadastradas. Vá em "Clientes (Empresas)" para adicionar sua primeira empresa.
-                 </p>
-              )}
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 pt-6 border-t border-gray-100 mt-6">
+          <div className="flex justify-end gap-3 pt-6 border-t border-black mt-6">
             <Button type="button" variant="ghost" onClick={closeModal}>
-              Cancelar
+              CANCELAR
             </Button>
             <Button type="submit" isLoading={isSubmitting} disabled={isSeller && clients.length === 0}>
-              {editingUser ? 'Salvar Alterações' : 'Criar Conta'}
+              {editingUser ? 'SALVAR ALTERAÇÕES' : 'CRIAR CONTA'}
             </Button>
           </div>
         </form>
