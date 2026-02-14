@@ -4,27 +4,50 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Order, StatusHistoryItem } from '../lib/types';
 import { 
-  Loader2, FileText, Calendar, User, ChevronDown, ChevronUp, CheckCircle2, 
-  XCircle, PackageCheck, Clock, Search, Filter, Download, AlertTriangle, 
-  Printer, History, DollarSign
+  Loader2, FileText, Calendar, User, ChevronDown, ChevronUp, 
+  PackageCheck, Clock, Search, Filter, Download, AlertTriangle, 
+  Printer, History, FileBarChart, CheckSquare, Square, X
 } from 'lucide-react';
 import { formatCurrency, formatDate, formatDateTime, cn } from '../lib/utils';
+import { ORDER_STATUSES, getStatusConfig } from '../lib/constants';
 import PageHeader from '../components/ui/PageHeader';
 import Input from '../components/ui/Input';
-import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
+import Modal from '../components/ui/Modal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import Papa from 'papaparse';
 
-// Monochrome Status Configuration (Same as SalesManagement)
-const ORDER_STATUSES = [
-  { value: 'rascunho', label: 'Rascunho', icon: FileText, style: 'bg-white text-black border border-black border-dashed' },
-  { value: 'enviado', label: 'Enviado', icon: Clock, style: 'bg-white text-black border border-black' },
-  { value: 'aprovado', label: 'Aprovado', icon: CheckCircle2, style: 'bg-black text-white border border-black' },
-  { value: 'faturado', label: 'Faturado', icon: DollarSign, style: 'bg-black text-white border border-black ring-2 ring-white ring-offset-1 ring-offset-black' },
-  { value: 'entregue', label: 'Entregue', icon: PackageCheck, style: 'bg-black text-white border border-black' },
-  { value: 'cancelado', label: 'Cancelado', icon: XCircle, style: 'bg-white text-black border border-black line-through decoration-1' },
-];
+// Report Types
+interface ReportConfig {
+  startDate: string;
+  endDate: string;
+  statuses: string[];
+  columns: {
+    id: boolean;
+    date: boolean;
+    client: boolean;
+    status: boolean;
+    total: boolean;
+    items_summary: boolean;
+  };
+  format: 'pdf' | 'csv';
+}
+
+const INITIAL_REPORT_CONFIG: ReportConfig = {
+  startDate: '',
+  endDate: '',
+  statuses: [],
+  columns: {
+    id: true,
+    date: true,
+    client: true,
+    status: true,
+    total: true,
+    items_summary: true // Default to true now
+  },
+  format: 'pdf'
+};
 
 export default function Orders() {
   const { isClient, isAdmin, isSeller } = useAuth();
@@ -36,6 +59,11 @@ export default function Orders() {
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+
+  // Report State
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [reportConfig, setReportConfig] = useState<ReportConfig>(INITIAL_REPORT_CONFIG);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
 
   useEffect(() => {
     fetchOrders();
@@ -63,22 +91,25 @@ export default function Orders() {
     try {
       const newHistoryEntry = { status: newStatus, updated_at: new Date().toISOString() };
       const updatedHistory = [...(currentHistory || []), newHistoryEntry];
+      
       const { error } = await supabase
         .from('orders')
         .update({ status: newStatus, status_history: updatedHistory })
         .eq('id', orderId);
 
       if (error) throw error;
+
       setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus, status_history: updatedHistory } : o));
-      toast.success('Status atualizado!');
-    } catch (error) {
-      toast.error('Erro ao atualizar status.');
+      toast.success(`Status atualizado para ${newStatus.toUpperCase()}!`);
+    } catch (error: any) {
+      console.error('Erro ao atualizar status:', error);
+      toast.error(`Erro ao atualizar: ${error.message || 'Tente novamente.'}`);
     } finally {
       setUpdatingStatus(null);
     }
   };
 
-  const generatePDF = (order: Order, e: React.MouseEvent) => {
+  const generateSinglePDF = (order: Order, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!order.order_items || order.order_items.length === 0) {
       toast.error('Pedido sem itens.');
@@ -86,28 +117,43 @@ export default function Orders() {
     }
     try {
       const doc = new jsPDF();
-      doc.setFontSize(20);
-      doc.text('CONFERÊNCIA DE PEDIDO', 14, 22);
-      doc.setFontSize(10);
-      doc.text(`GERADO EM: ${new Date().toLocaleString('pt-BR')}`, 14, 28);
       
+      // Header
+      doc.setFontSize(22);
+      doc.setFont("helvetica", "bold");
+      doc.text('PORTAL OBJETIVUS', 14, 20);
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text('CONFERÊNCIA DE PEDIDO', 14, 26);
+      doc.text(`EMISSÃO: ${new Date().toLocaleString('pt-BR')}`, 14, 31);
+      
+      // Box Info
       doc.setDrawColor(0);
-      doc.rect(14, 35, 182, 40);
+      doc.setLineWidth(0.5);
+      doc.rect(14, 38, 182, 35);
       
-      doc.setFontSize(12);
+      // Order Info
+      doc.setFontSize(11);
       doc.setFont("helvetica", "bold");
-      doc.text(`PEDIDO #${order.id.slice(0, 8).toUpperCase()}`, 20, 45);
+      doc.text(`PEDIDO #${order.id.slice(0, 8).toUpperCase()}`, 20, 48);
+      
       doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
-      doc.text(`DATA: ${formatDate(order.created_at)}`, 20, 52);
-      doc.text(`STATUS: ${order.status.toUpperCase()}`, 20, 58);
+      doc.text(`DATA: ${formatDate(order.created_at)}`, 20, 54);
+      doc.text(`STATUS: ${order.status.toUpperCase()}`, 20, 60);
+      doc.text(`TOTAL: ${formatCurrency(order.total_amount)}`, 20, 66);
 
-      doc.setFontSize(12);
+      // Client Info
+      doc.setFontSize(11);
       doc.setFont("helvetica", "bold");
-      doc.text('CLIENTE', 110, 45);
+      doc.text('DADOS DO CLIENTE', 110, 48);
+      
       doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
-      doc.text(`${order.clients?.razao_social || 'N/A'}`, 110, 52);
+      doc.text(`${order.clients?.nome_fantasia || 'N/A'}`, 110, 54);
+      doc.text(`${order.clients?.razao_social || 'N/A'}`, 110, 60);
+      if (order.clients?.cnpj) doc.text(`CNPJ: ${order.clients.cnpj}`, 110, 66);
       
       const tableBody = order.order_items.map(item => [
         item.products?.sku || 'N/A',
@@ -118,12 +164,18 @@ export default function Orders() {
       ]);
 
       autoTable(doc, {
-        startY: 85,
+        startY: 80,
         head: [['SKU', 'PRODUTO', 'QTD.', 'UNIT.', 'TOTAL']],
         body: tableBody,
-        theme: 'plain',
-        headStyles: { fillColor: [0, 0, 0], textColor: 255, fontStyle: 'bold' },
-        styles: { fontSize: 9, cellPadding: 3, lineColor: 0, lineWidth: 0.1 },
+        theme: 'grid',
+        headStyles: { fillColor: [0, 0, 0], textColor: 255, fontStyle: 'bold', halign: 'left' },
+        styles: { fontSize: 9, cellPadding: 3, lineColor: 0, lineWidth: 0.1, textColor: 0 },
+        columnStyles: {
+          0: { cellWidth: 30 },
+          2: { cellWidth: 20, halign: 'center' },
+          3: { cellWidth: 30, halign: 'right' },
+          4: { cellWidth: 30, halign: 'right' }
+        },
         foot: [['', '', '', 'TOTAL FINAL', formatCurrency(order.total_amount)]],
         footStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: 'bold', halign: 'right' }
       });
@@ -140,9 +192,200 @@ export default function Orders() {
     window.print();
   };
 
-  const getStatusConfig = (status: string) => {
-    return ORDER_STATUSES.find(s => s.value === status) || ORDER_STATUSES[0];
+  // --- Report Logic ---
+
+  const toggleReportStatus = (status: string) => {
+    setReportConfig(prev => {
+      const newStatuses = prev.statuses.includes(status)
+        ? prev.statuses.filter(s => s !== status)
+        : [...prev.statuses, status];
+      return { ...prev, statuses: newStatuses };
+    });
   };
+
+  const toggleReportColumn = (column: keyof ReportConfig['columns']) => {
+    setReportConfig(prev => ({
+      ...prev,
+      columns: { ...prev.columns, [column]: !prev.columns[column] }
+    }));
+  };
+
+  const generateReport = async () => {
+    setIsGeneratingReport(true);
+    try {
+      // 1. Filter Data locally
+      const filteredData = orders.filter(order => {
+        // Date Filter - FIX: Use local time construction
+        if (reportConfig.startDate) {
+          const orderDate = new Date(order.created_at);
+          const [y, m, d] = reportConfig.startDate.split('-').map(Number);
+          const start = new Date(y, m - 1, d, 0, 0, 0, 0);
+          if (orderDate < start) return false;
+        }
+        if (reportConfig.endDate) {
+          const orderDate = new Date(order.created_at);
+          const [y, m, d] = reportConfig.endDate.split('-').map(Number);
+          const end = new Date(y, m - 1, d, 23, 59, 59, 999);
+          if (orderDate > end) return false;
+        }
+
+        // Status Filter (if empty, assume all)
+        if (reportConfig.statuses.length > 0) {
+          if (!reportConfig.statuses.includes(order.status)) return false;
+        }
+
+        return true;
+      });
+
+      if (filteredData.length === 0) {
+        toast.info('Nenhum pedido encontrado com os filtros selecionados.');
+        setIsGeneratingReport(false);
+        return;
+      }
+
+      // Calculate Total Value of the Report
+      const totalReportValue = filteredData.reduce((acc, curr) => acc + (curr.total_amount || 0), 0);
+
+      // Helper to format date string (YYYY-MM-DD) to DD/MM/YYYY without timezone shift
+      const formatReportDate = (dateStr: string) => {
+        if (!dateStr) return '';
+        const [y, m, d] = dateStr.split('-');
+        return `${d}/${m}/${y}`;
+      };
+
+      // 2. Prepare Data for Export
+      const exportData = filteredData.map(order => {
+        const row: any = {};
+        if (reportConfig.columns.id) row['ID'] = `#${order.id.slice(0, 8).toUpperCase()}`;
+        if (reportConfig.columns.date) row['DATA'] = formatDate(order.created_at);
+        if (reportConfig.columns.client) row['CLIENTE'] = order.clients?.nome_fantasia || 'N/A';
+        if (reportConfig.columns.status) row['STATUS'] = order.status.toUpperCase();
+        if (reportConfig.columns.total) row['TOTAL'] = reportConfig.format === 'csv' ? order.total_amount : formatCurrency(order.total_amount);
+        
+        if (reportConfig.columns.items_summary) {
+          // Logic for CSV vs PDF
+          if (reportConfig.format === 'csv') {
+             // Single line for CSV
+             const summary = order.order_items?.map(i => `${i.quantity}x ${i.products?.name}`).join(' | ') || '';
+             row['ITENS'] = summary;
+          } else {
+             // New lines for PDF
+             const summary = order.order_items?.map(i => `${i.quantity}x ${i.products?.name}`).join('\n') || '';
+             row['ITENS'] = summary;
+          }
+        }
+        return row;
+      });
+
+      // 3. Generate File
+      if (reportConfig.format === 'csv') {
+        const csv = Papa.unparse(exportData);
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `relatorio_pedidos_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        const doc = new jsPDF();
+        
+        // Header
+        doc.setFontSize(22);
+        doc.setFont("helvetica", "bold");
+        doc.text('RELATÓRIO DE PEDIDOS', 14, 20);
+        
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "normal");
+        doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 26);
+        
+        // Summary Box
+        doc.setDrawColor(0);
+        doc.setFillColor(245, 245, 245);
+        doc.rect(14, 32, 182, 18, 'F');
+        doc.rect(14, 32, 182, 18, 'S'); // Border
+
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "bold");
+        doc.text('RESUMO DO PERÍODO', 20, 40);
+        
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.text(`Período: ${formatReportDate(reportConfig.startDate)} à ${formatReportDate(reportConfig.endDate)}`, 20, 46);
+        doc.text(`Total de Registros: ${filteredData.length}`, 80, 46);
+        doc.text(`Valor Total: ${formatCurrency(totalReportValue)}`, 140, 46);
+
+        const headers = Object.keys(exportData[0]);
+        const body = exportData.map(obj => Object.values(obj));
+
+        autoTable(doc, {
+          startY: 55,
+          head: [headers],
+          body: body,
+          theme: 'grid', // Changed from plain to grid for better readability
+          headStyles: { 
+            fillColor: [0, 0, 0], 
+            textColor: 255, 
+            fontStyle: 'bold',
+            halign: 'left',
+            lineWidth: 0.1,
+            lineColor: 0
+          },
+          styles: { 
+            fontSize: 8, 
+            cellPadding: 3, 
+            lineColor: 0, 
+            lineWidth: 0.1,
+            textColor: 0,
+            valign: 'middle'
+          },
+          columnStyles: {
+            // Adjust widths based on content
+            0: { cellWidth: 25 }, // ID
+            1: { cellWidth: 25 }, // Data
+            4: { halign: 'right', fontStyle: 'bold' }, // Total
+            5: { cellWidth: 'auto' } // Itens (takes remaining space)
+          },
+          didParseCell: (data) => {
+             // Center align status if it exists
+             if (data.section === 'body' && data.column.index === 3) {
+                data.cell.styles.halign = 'center';
+             }
+          },
+          // Add Footer with Page Numbers
+          didDrawPage: (data) => {
+            const pageCount = doc.internal.pages.length - 1;
+            doc.setFontSize(8);
+            doc.text(
+              `Página ${data.pageNumber}`, 
+              doc.internal.pageSize.width - 20, 
+              doc.internal.pageSize.height - 10,
+              { align: 'right' }
+            );
+            doc.text(
+              'Portal Objetivus', 
+              14, 
+              doc.internal.pageSize.height - 10
+            );
+          }
+        });
+
+        doc.save(`relatorio_pedidos_${new Date().toISOString().split('T')[0]}.pdf`);
+      }
+
+      toast.success('Relatório gerado com sucesso!');
+      setIsReportModalOpen(false);
+
+    } catch (error) {
+      console.error(error);
+      toast.error('Erro ao gerar relatório.');
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
+  // --- End Report Logic ---
 
   const filteredOrders = orders.filter(order => {
     const matchesSearch = order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -158,6 +401,15 @@ export default function Orders() {
       <PageHeader 
         title={isClient ? 'Meus Pedidos' : 'Gestão de Pedidos'}
         subtitle={isClient ? 'Acompanhe suas compras' : 'Visualize e atualize o status das vendas'}
+        action={
+          <Button 
+            variant="secondary" 
+            onClick={() => setIsReportModalOpen(true)} 
+            leftIcon={<FileBarChart size={18} />}
+          >
+            RELATÓRIOS
+          </Button>
+        }
       />
 
       {orders.length === 0 ? (
@@ -181,11 +433,11 @@ export default function Orders() {
                <select
                  value={statusFilter}
                  onChange={(e) => setStatusFilter(e.target.value)}
-                 className="w-full h-10 pl-10 pr-4 bg-white border border-black text-sm font-bold text-black focus:ring-1 focus:ring-black outline-none appearance-none cursor-pointer uppercase"
+                 className="w-full h-10 pl-9 pr-8 bg-white border border-black text-sm font-bold text-black focus:ring-1 focus:ring-black outline-none appearance-none cursor-pointer uppercase"
                >
                  <option value="all">TODOS OS STATUS</option>
                  {ORDER_STATUSES.map(s => (
-                   <option key={s.value} value={s.value}>{s.label.toUpperCase()}</option>
+                   <option key={s.value} value={s.value}>{s.label}</option>
                  ))}
                </select>
                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-black pointer-events-none" />
@@ -224,7 +476,7 @@ export default function Orders() {
                           <div className="flex items-center gap-3 mb-1">
                             <h3 className="font-black text-black text-lg uppercase">#{order.id.slice(0, 8)}</h3>
                             {!canEdit && (
-                              <span className={cn("text-xs font-bold uppercase px-2 py-0.5 flex items-center gap-1", statusConfig.style)}>
+                              <span className={cn("text-xs font-bold uppercase px-2 py-0.5 flex items-center gap-1 border-2", statusConfig.style)}>
                                 <StatusIcon size={12} />
                                 {statusConfig.label}
                               </span>
@@ -258,7 +510,7 @@ export default function Orders() {
                                 value={order.status}
                                 onChange={(e) => handleStatusChange(order.id, e.target.value, order.status_history, e as any)}
                                 className={cn(
-                                  "appearance-none pl-9 pr-8 py-2 text-sm font-bold border-2 border-black outline-none cursor-pointer uppercase",
+                                  "appearance-none pl-9 pr-8 py-2 text-sm font-bold border-2 outline-none cursor-pointer uppercase transition-colors",
                                   statusConfig.style
                                 )}
                               >
@@ -291,6 +543,41 @@ export default function Orders() {
 
                     {isExpanded && (
                       <div className="border-t-2 border-black bg-white p-6 animate-in slide-in-from-top-2">
+                        
+                        {/* Timeline Section */}
+                        <div className="mb-8 border-2 border-black p-4 bg-white">
+                          <h4 className="text-xs font-black text-black uppercase tracking-widest mb-4 flex items-center gap-2 border-b-2 border-black pb-2 w-fit">
+                            <History size={14} />
+                            Histórico
+                          </h4>
+                          <div className="flex flex-col gap-4 pl-2">
+                            <div className="flex items-center gap-4 text-sm">
+                              <div className="w-3 h-3 bg-black shrink-0"></div>
+                              <span className="text-black w-36 text-xs font-mono font-bold">{formatDateTime(order.created_at)}</span>
+                              <span className="font-bold text-black flex items-center gap-2 uppercase text-xs">
+                                <Clock size={14} />
+                                Pedido Criado
+                              </span>
+                            </div>
+                            
+                            {order.status_history && order.status_history.map((history, idx) => {
+                              const histConfig = getStatusConfig(history.status);
+                              return (
+                                <div key={idx} className="flex items-center gap-4 text-sm">
+                                  <div className="w-3 h-3 bg-white border-2 border-black shrink-0"></div>
+                                  <span className="text-black w-36 text-xs font-mono font-bold">{formatDateTime(history.updated_at)}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold uppercase">Status:</span>
+                                    <span className={cn("text-[10px] font-bold uppercase px-2 py-0.5 border", histConfig.style)}>
+                                      {histConfig.label}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
                         <div className="flex justify-between items-center mb-4 no-print">
                           <h4 className="text-sm font-bold text-black flex items-center gap-2 uppercase">
                             <PackageCheck size={18} />
@@ -300,7 +587,7 @@ export default function Orders() {
                             <Button variant="secondary" size="sm" onClick={(e) => handlePrint(e)} leftIcon={<Printer size={14} />}>
                               IMPRIMIR
                             </Button>
-                            <Button variant="secondary" size="sm" onClick={(e) => generatePDF(order, e)} leftIcon={<Download size={14} />}>
+                            <Button variant="secondary" size="sm" onClick={(e) => generateSinglePDF(order, e)} leftIcon={<Download size={14} />}>
                               BAIXAR PDF
                             </Button>
                           </div>
@@ -312,7 +599,7 @@ export default function Orders() {
                               <tr>
                                 <th className="px-4 py-3">Produto</th>
                                 <th className="px-4 py-3 text-center">Qtd.</th>
-                                <th className="px-4 py-3 text-right">Unit.</th>
+                                <th className="px-4 py-3 text-right">Unitário</th>
                                 <th className="px-4 py-3 text-right">Total</th>
                               </tr>
                             </thead>
@@ -355,6 +642,212 @@ export default function Orders() {
           </div>
         </div>
       )}
+
+      {/* Report Modal */}
+      <Modal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        title="GERAR RELATÓRIO"
+      >
+        <div className="space-y-8">
+          {/* Date Range */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-black text-black uppercase border-b-2 border-black pb-1">
+              1. Período
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input
+                type="date"
+                label="Data Inicial"
+                value={reportConfig.startDate}
+                onChange={(e) => setReportConfig({ ...reportConfig, startDate: e.target.value })}
+              />
+              <Input
+                type="date"
+                label="Data Final"
+                value={reportConfig.endDate}
+                onChange={(e) => setReportConfig({ ...reportConfig, endDate: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {/* Status Filter */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-black text-black uppercase border-b-2 border-black pb-1">
+              2. Filtrar por Status
+            </h4>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {ORDER_STATUSES.map((status) => {
+                const isSelected = reportConfig.statuses.includes(status.value);
+                return (
+                  <button
+                    key={status.value}
+                    onClick={() => toggleReportStatus(status.value)}
+                    className={cn(
+                      "flex items-center gap-2 px-3 py-2 border-2 text-xs font-bold uppercase transition-all",
+                      isSelected 
+                        ? "bg-black text-white border-black" 
+                        : "bg-white text-black border-gray-200 hover:border-black"
+                    )}
+                  >
+                    {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+                    {status.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-gray-500 font-medium">* Se nenhum for selecionado, todos serão incluídos.</p>
+          </div>
+
+          {/* Columns */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-black text-black uppercase border-b-2 border-black pb-1">
+              3. Colunas do Relatório
+            </h4>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input 
+                  type="checkbox" 
+                  checked={reportConfig.columns.id}
+                  onChange={() => toggleReportColumn('id')}
+                  className="hidden"
+                />
+                <div className={cn(
+                  "w-5 h-5 border-2 flex items-center justify-center transition-colors",
+                  reportConfig.columns.id ? "bg-black border-black text-white" : "bg-white border-black group-hover:bg-gray-100"
+                )}>
+                  {reportConfig.columns.id && <CheckSquare size={14} />}
+                </div>
+                <span className="text-sm font-bold uppercase">ID do Pedido</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input 
+                  type="checkbox" 
+                  checked={reportConfig.columns.date}
+                  onChange={() => toggleReportColumn('date')}
+                  className="hidden"
+                />
+                <div className={cn(
+                  "w-5 h-5 border-2 flex items-center justify-center transition-colors",
+                  reportConfig.columns.date ? "bg-black border-black text-white" : "bg-white border-black group-hover:bg-gray-100"
+                )}>
+                  {reportConfig.columns.date && <CheckSquare size={14} />}
+                </div>
+                <span className="text-sm font-bold uppercase">Data</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input 
+                  type="checkbox" 
+                  checked={reportConfig.columns.client}
+                  onChange={() => toggleReportColumn('client')}
+                  className="hidden"
+                />
+                <div className={cn(
+                  "w-5 h-5 border-2 flex items-center justify-center transition-colors",
+                  reportConfig.columns.client ? "bg-black border-black text-white" : "bg-white border-black group-hover:bg-gray-100"
+                )}>
+                  {reportConfig.columns.client && <CheckSquare size={14} />}
+                </div>
+                <span className="text-sm font-bold uppercase">Cliente</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input 
+                  type="checkbox" 
+                  checked={reportConfig.columns.status}
+                  onChange={() => toggleReportColumn('status')}
+                  className="hidden"
+                />
+                <div className={cn(
+                  "w-5 h-5 border-2 flex items-center justify-center transition-colors",
+                  reportConfig.columns.status ? "bg-black border-black text-white" : "bg-white border-black group-hover:bg-gray-100"
+                )}>
+                  {reportConfig.columns.status && <CheckSquare size={14} />}
+                </div>
+                <span className="text-sm font-bold uppercase">Status</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input 
+                  type="checkbox" 
+                  checked={reportConfig.columns.total}
+                  onChange={() => toggleReportColumn('total')}
+                  className="hidden"
+                />
+                <div className={cn(
+                  "w-5 h-5 border-2 flex items-center justify-center transition-colors",
+                  reportConfig.columns.total ? "bg-black border-black text-white" : "bg-white border-black group-hover:bg-gray-100"
+                )}>
+                  {reportConfig.columns.total && <CheckSquare size={14} />}
+                </div>
+                <span className="text-sm font-bold uppercase">Valor Total</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input 
+                  type="checkbox" 
+                  checked={reportConfig.columns.items_summary}
+                  onChange={() => toggleReportColumn('items_summary')}
+                  className="hidden"
+                />
+                <div className={cn(
+                  "w-5 h-5 border-2 flex items-center justify-center transition-colors",
+                  reportConfig.columns.items_summary ? "bg-black border-black text-white" : "bg-white border-black group-hover:bg-gray-100"
+                )}>
+                  {reportConfig.columns.items_summary && <CheckSquare size={14} />}
+                </div>
+                <span className="text-sm font-bold uppercase">Resumo de Itens</span>
+              </label>
+            </div>
+          </div>
+
+          {/* Format */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-black text-black uppercase border-b-2 border-black pb-1">
+              4. Formato de Exportação
+            </h4>
+            <div className="flex gap-4">
+              <button
+                onClick={() => setReportConfig({ ...reportConfig, format: 'pdf' })}
+                className={cn(
+                  "flex-1 py-3 border-2 font-bold uppercase transition-all flex items-center justify-center gap-2",
+                  reportConfig.format === 'pdf' 
+                    ? "bg-black text-white border-black" 
+                    : "bg-white text-black border-gray-200 hover:border-black"
+                )}
+              >
+                <FileText size={20} /> PDF
+              </button>
+              <button
+                onClick={() => setReportConfig({ ...reportConfig, format: 'csv' })}
+                className={cn(
+                  "flex-1 py-3 border-2 font-bold uppercase transition-all flex items-center justify-center gap-2",
+                  reportConfig.format === 'csv' 
+                    ? "bg-black text-white border-black" 
+                    : "bg-white text-black border-gray-200 hover:border-black"
+                )}
+              >
+                <FileBarChart size={20} /> CSV (Excel)
+              </button>
+            </div>
+          </div>
+
+          <div className="pt-6 border-t-2 border-black flex justify-end gap-3">
+            <Button variant="ghost" onClick={() => setIsReportModalOpen(false)}>
+              CANCELAR
+            </Button>
+            <Button 
+              onClick={generateReport} 
+              isLoading={isGeneratingReport}
+              leftIcon={<Download size={18} />}
+            >
+              BAIXAR RELATÓRIO
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

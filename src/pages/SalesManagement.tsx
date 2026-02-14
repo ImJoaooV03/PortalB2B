@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { Order, StatusHistoryItem } from '../lib/types';
+import { Order, Client } from '../lib/types';
 import { 
   User, 
   Search, 
@@ -15,24 +15,26 @@ import {
   TrendingUp, 
   ShoppingBag,
   Loader2,
-  PackageCheck,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  Printer,
   Download,
   CheckSquare,
   Square,
   History,
-  ArrowRight
+  Clock,
+  Printer,
+  XCircle,
+  FileBarChart,
+  Building2
 } from 'lucide-react';
 import { formatCurrency, formatDate, formatDateTime, cn } from '../lib/utils';
+import { ORDER_STATUSES, getStatusConfig } from '../lib/constants';
 import PageHeader from '../components/ui/PageHeader';
-import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
+import Input from '../components/ui/Input';
+import Modal from '../components/ui/Modal';
 import { startOfMonth, endOfMonth, isWithinInterval, parseISO } from 'date-fns';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import Papa from 'papaparse';
 
 interface SellerProfile {
   id: string;
@@ -40,15 +42,16 @@ interface SellerProfile {
   email: string;
 }
 
-// Monochrome Status Configuration
-const ORDER_STATUSES = [
-  { value: 'rascunho', label: 'Rascunho', icon: FileText, style: 'bg-white text-black border border-black border-dashed' },
-  { value: 'enviado', label: 'Enviado', icon: Clock, style: 'bg-white text-black border border-black' },
-  { value: 'aprovado', label: 'Aprovado', icon: CheckCircle2, style: 'bg-black text-white border border-black' },
-  { value: 'faturado', label: 'Faturado', icon: DollarSign, style: 'bg-black text-white border border-black ring-2 ring-white ring-offset-1 ring-offset-black' }, // Double border effect
-  { value: 'entregue', label: 'Entregue', icon: PackageCheck, style: 'bg-black text-white border border-black' },
-  { value: 'cancelado', label: 'Cancelado', icon: XCircle, style: 'bg-white text-black border border-black line-through decoration-1' },
-];
+// Report Configuration Interface
+interface AdminReportConfig {
+  startDate: string;
+  endDate: string;
+  sellerId: string; // 'all' or specific ID
+  clientId: string; // 'all' or specific ID
+  statuses: string[];
+  includeCharts: boolean; // For PDF visual summary
+  format: 'pdf' | 'csv';
+}
 
 export default function SalesManagement() {
   const { isAdmin } = useAuth();
@@ -56,10 +59,11 @@ export default function SalesManagement() {
   
   // Data State
   const [sellers, setSellers] = useState<SellerProfile[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Filter State
+  // Filter State (On Screen)
   const [selectedSellerId, setSelectedSellerId] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -72,6 +76,19 @@ export default function SalesManagement() {
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
   const [isGeneratingBatch, setIsGeneratingBatch] = useState(false);
 
+  // Report Modal State
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [reportConfig, setReportConfig] = useState<AdminReportConfig>({
+    startDate: new Date().toISOString().split('T')[0], // Default today
+    endDate: new Date().toISOString().split('T')[0],
+    sellerId: 'all',
+    clientId: 'all',
+    statuses: [],
+    includeCharts: true,
+    format: 'pdf'
+  });
+
   useEffect(() => {
     if (isAdmin) {
       fetchData();
@@ -82,7 +99,6 @@ export default function SalesManagement() {
     try {
       setLoading(true);
       
-      // 1. Fetch Sellers
       const { data: sellersData, error: sellersError } = await supabase
         .from('profiles')
         .select('id, full_name, email')
@@ -91,7 +107,15 @@ export default function SalesManagement() {
       if (sellersError) throw sellersError;
       setSellers(sellersData || []);
 
-      // 2. Fetch All Orders
+      const { data: clientsData, error: clientsError } = await supabase
+        .from('clients')
+        .select('id, nome_fantasia, razao_social')
+        .eq('status', 'active')
+        .order('nome_fantasia');
+
+      if (clientsError) throw clientsError;
+      setClients(clientsData as any || []);
+
       const { data: ordersData, error: ordersError } = await supabase
         .from('orders')
         .select(`
@@ -122,32 +146,32 @@ export default function SalesManagement() {
     }
   }
 
-  // --- Computed Data ---
+  // --- Computed Data for Screen ---
   const filteredOrders = useMemo(() => {
     return orders.filter(order => {
-      // 1. Seller Filter
       if (selectedSellerId !== 'all') {
         if (order.clients.vendedor_id !== selectedSellerId) return false;
       }
 
-      // 2. Search Filter
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch = 
         order.id.toLowerCase().includes(searchLower) ||
         order.clients.nome_fantasia.toLowerCase().includes(searchLower);
       if (!matchesSearch) return false;
 
-      // 3. Status Filter
       if (statusFilter !== 'all' && order.status !== statusFilter) return false;
 
-      // 4. Date Filter
       if (dateRange.start && dateRange.end) {
-        const orderDate = parseISO(order.created_at);
-        const start = parseISO(dateRange.start);
-        const end = parseISO(dateRange.end);
-        end.setHours(23, 59, 59, 999);
+        const orderDate = new Date(order.created_at);
         
-        if (!isWithinInterval(orderDate, { start, end })) return false;
+        // FIX: Construct local dates manually to avoid UTC shift
+        const [startYear, startMonth, startDay] = dateRange.start.split('-').map(Number);
+        const start = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
+        
+        const [endYear, endMonth, endDay] = dateRange.end.split('-').map(Number);
+        const end = new Date(endYear, endMonth - 1, endDay, 23, 59, 59, 999);
+        
+        if (orderDate < start || orderDate > end) return false;
       }
 
       return true;
@@ -190,11 +214,11 @@ export default function SalesManagement() {
     setSelectedOrders(newSet);
   };
 
-  // --- PDF Generation Logic ---
+  // --- PDF Generation Logic (Single/Batch) ---
   const generatePDF = (order: Order, doc?: jsPDF, isBatch = false) => {
     const pdf = doc || new jsPDF();
     
-    // Header - Monochrome PDF
+    // ... (Existing Single PDF Logic - kept for batch/single button)
     pdf.setFontSize(20);
     pdf.setTextColor(0, 0, 0);
     pdf.text('PEDIDO DE VENDA', 14, 22);
@@ -203,10 +227,9 @@ export default function SalesManagement() {
     pdf.setTextColor(0);
     pdf.text(`EMISSÃO: ${new Date().toLocaleString('pt-BR')}`, 14, 28);
 
-    // Box Info
     pdf.setDrawColor(0, 0, 0);
     pdf.setLineWidth(0.5);
-    pdf.rect(14, 35, 182, 40); // Simple rect, no fill
+    pdf.rect(14, 35, 182, 40);
 
     pdf.setFontSize(12);
     pdf.setFont("helvetica", "bold");
@@ -217,7 +240,6 @@ export default function SalesManagement() {
     pdf.text(`DATA: ${formatDate(order.created_at)}`, 20, 52);
     pdf.text(`STATUS: ${order.status.toUpperCase()}`, 20, 58);
 
-    // Client Info
     pdf.setFontSize(12);
     pdf.setFont("helvetica", "bold");
     pdf.text('CLIENTE', 110, 45);
@@ -228,7 +250,6 @@ export default function SalesManagement() {
     pdf.text(`FANTASIA: ${order.clients?.nome_fantasia || 'N/A'}`, 110, 58);
     if (order.clients?.cnpj) pdf.text(`CNPJ: ${order.clients.cnpj}`, 110, 64);
 
-    // Items
     const tableBody = order.order_items?.map(item => [
       item.products?.sku || '-',
       item.products?.name || 'PRODUTO INDISPONÍVEL',
@@ -241,20 +262,9 @@ export default function SalesManagement() {
       startY: 85,
       head: [['SKU', 'PRODUTO', 'QTD.', 'UNITÁRIO', 'TOTAL']],
       body: tableBody,
-      theme: 'plain', // Minimalist theme
-      headStyles: { 
-        fillColor: [0, 0, 0], 
-        textColor: 255, 
-        fontStyle: 'bold',
-        halign: 'left'
-      },
-      styles: { 
-        fontSize: 9, 
-        cellPadding: 4,
-        textColor: 0,
-        lineColor: 0,
-        lineWidth: 0.1
-      },
+      theme: 'plain',
+      headStyles: { fillColor: [0, 0, 0], textColor: 255, fontStyle: 'bold', halign: 'left' },
+      styles: { fontSize: 9, cellPadding: 4, textColor: 0, lineColor: 0, lineWidth: 0.1 },
       columnStyles: {
         0: { cellWidth: 30 },
         2: { cellWidth: 20, halign: 'center' },
@@ -262,16 +272,271 @@ export default function SalesManagement() {
         4: { cellWidth: 30, halign: 'right' }
       },
       foot: [['', '', '', 'TOTAL FINAL', formatCurrency(order.total_amount)]],
-      footStyles: { 
-        fillColor: [240, 240, 240], 
-        textColor: 0, 
-        fontStyle: 'bold', 
-        halign: 'right' 
-      }
+      footStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: 'bold', halign: 'right' }
     });
 
     if (!doc) {
       pdf.save(`pedido_${order.id.slice(0, 8)}.pdf`);
+    }
+  };
+
+  // --- NEW: Advanced Admin Report Generation ---
+  const generateAdminReport = async () => {
+    setIsGeneratingReport(true);
+    try {
+      // 1. Filter Data based on Report Config
+      const reportData = orders.filter(order => {
+        // Seller Filter
+        if (reportConfig.sellerId !== 'all') {
+          if (order.clients.vendedor_id !== reportConfig.sellerId) return false;
+        }
+
+        // Client Filter
+        if (reportConfig.clientId !== 'all') {
+          if (order.client_id !== reportConfig.clientId) return false;
+        }
+
+        // Date Filter - FIX: Use local time construction
+        if (reportConfig.startDate) {
+          const orderDate = new Date(order.created_at);
+          const [y, m, d] = reportConfig.startDate.split('-').map(Number);
+          const start = new Date(y, m - 1, d, 0, 0, 0, 0);
+          if (orderDate < start) return false;
+        }
+        if (reportConfig.endDate) {
+          const orderDate = new Date(order.created_at);
+          const [y, m, d] = reportConfig.endDate.split('-').map(Number);
+          const end = new Date(y, m - 1, d, 23, 59, 59, 999);
+          if (orderDate > end) return false;
+        }
+
+        // Status Filter
+        if (reportConfig.statuses.length > 0) {
+          if (!reportConfig.statuses.includes(order.status)) return false;
+        }
+
+        return true;
+      });
+
+      if (reportData.length === 0) {
+        toast.info('Nenhum dado encontrado para os filtros selecionados.');
+        setIsGeneratingReport(false);
+        return;
+      }
+
+      // 2. Calculate Aggregates
+      const totalValue = reportData.reduce((acc, curr) => acc + (curr.total_amount || 0), 0);
+      const averageTicket = totalValue / reportData.length;
+      
+      // Group by Seller
+      const salesBySeller: Record<string, { name: string, total: number, count: number }> = {};
+      reportData.forEach(order => {
+        const sellerId = order.clients.vendedor_id || 'unknown';
+        const sellerName = sellers.find(s => s.id === sellerId)?.full_name || 'Desconhecido/Sistema';
+        
+        if (!salesBySeller[sellerId]) {
+          salesBySeller[sellerId] = { name: sellerName, total: 0, count: 0 };
+        }
+        salesBySeller[sellerId].total += order.total_amount;
+        salesBySeller[sellerId].count += 1;
+      });
+      const topSeller = Object.values(salesBySeller).sort((a, b) => b.total - a.total)[0];
+
+      // Group by Product
+      const salesByProduct: Record<string, { name: string, qty: number, total: number }> = {};
+      reportData.forEach(order => {
+        order.order_items.forEach(item => {
+          const sku = item.products?.sku || 'unknown';
+          if (!salesByProduct[sku]) {
+            salesByProduct[sku] = { name: item.products?.name || 'Item Removido', qty: 0, total: 0 };
+          }
+          salesByProduct[sku].qty += item.quantity;
+          salesByProduct[sku].total += item.subtotal;
+        });
+      });
+      const topProducts = Object.values(salesByProduct).sort((a, b) => b.qty - a.qty).slice(0, 5);
+
+      // Helper to format date string (YYYY-MM-DD) to DD/MM/YYYY without timezone shift
+      const formatReportDate = (dateStr: string) => {
+        if (!dateStr) return '';
+        const [y, m, d] = dateStr.split('-');
+        return `${d}/${m}/${y}`;
+      };
+
+      // 3. Generate Output
+      if (reportConfig.format === 'csv') {
+        const csvData = reportData.map(o => ({
+          ID: o.id,
+          DATA: formatDate(o.created_at),
+          CLIENTE: o.clients.nome_fantasia,
+          VENDEDOR: sellers.find(s => s.id === o.clients.vendedor_id)?.full_name || 'N/A',
+          STATUS: o.status.toUpperCase(),
+          TOTAL: o.total_amount
+        }));
+        const csv = Papa.unparse(csvData);
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `relatorio_gerencial_${new Date().toISOString().split('T')[0]}.csv`;
+        link.click();
+      } else {
+        // PDF Generation
+        const doc = new jsPDF();
+        
+        // --- Header ---
+        doc.setFontSize(22);
+        doc.setFont("helvetica", "bold");
+        doc.text('RELATÓRIO GERENCIAL', 14, 20);
+        
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "normal");
+        doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 26);
+        doc.text(`Período: ${formatReportDate(reportConfig.startDate)} à ${formatReportDate(reportConfig.endDate)}`, 14, 31);
+        
+        // Add Client Name if specific
+        if (reportConfig.clientId !== 'all') {
+          const clientName = clients.find(c => c.id === reportConfig.clientId)?.nome_fantasia || 'Cliente Específico';
+          doc.text(`Cliente: ${clientName.toUpperCase()}`, 14, 36);
+        }
+
+        // --- Executive Summary Cards ---
+        const startY = reportConfig.clientId !== 'all' ? 45 : 40;
+        const isGeneralReport = reportConfig.sellerId === 'all' && reportConfig.clientId === 'all';
+        
+        // Layout Logic: If specific seller or client, use 2 wider cards. If general, use 3 cards.
+        const gap = 4;
+        const totalWidth = 182; // A4 width (210) - margins (14*2)
+        const cardHeight = 25;
+        
+        // Card 1: VENDAS TOTAIS
+        // If General: ~60 width. If Specific: ~90 width
+        const col1Width = isGeneralReport ? 60 : 90;
+        
+        doc.setDrawColor(0);
+        doc.setFillColor(0, 0, 0); // Black bg
+        doc.rect(14, startY, col1Width, cardHeight, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(9);
+        doc.text('VENDAS TOTAIS', 19, startY + 8);
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text(formatCurrency(totalValue), 19, startY + 18);
+
+        // Card 2: PEDIDOS
+        const col2X = 14 + col1Width + gap;
+        const col2Width = isGeneralReport ? 60 : (totalWidth - col1Width - gap); // Fill rest if specific
+
+        doc.setFillColor(255, 255, 255); // White bg
+        doc.setDrawColor(0); // Black border
+        doc.rect(col2X, startY, col2Width, cardHeight, 'FD');
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.text('PEDIDOS', col2X + 5, startY + 8);
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text(reportData.length.toString(), col2X + 5, startY + 18);
+
+        // Card 3: MELHOR VENDEDOR (Only if General Report)
+        if (isGeneralReport) {
+          const col3X = col2X + col2Width + gap;
+          const col3Width = totalWidth - col1Width - col2Width - (gap * 2);
+          
+          doc.rect(col3X, startY, col3Width, cardHeight, 'S');
+          doc.setFontSize(9);
+          doc.setFont("helvetica", "normal");
+          doc.text('MELHOR VENDEDOR', col3X + 5, startY + 8);
+          doc.setFontSize(11);
+          doc.setFont("helvetica", "bold");
+          doc.text(topSeller?.name.split(' ')[0].toUpperCase() || '-', col3X + 5, startY + 18);
+        }
+
+        let currentY = startY + 35;
+
+        // --- Ranking by Seller (Only if All Sellers selected) ---
+        if (reportConfig.sellerId === 'all') {
+          doc.setFontSize(12);
+          doc.setTextColor(0);
+          doc.text('DESEMPENHO POR VENDEDOR', 14, currentY);
+          
+          const sellerTableData = Object.values(salesBySeller)
+            .sort((a, b) => b.total - a.total)
+            .map(s => [s.name.toUpperCase(), s.count, formatCurrency(s.total)]);
+
+          autoTable(doc, {
+            startY: currentY + 5,
+            head: [['VENDEDOR', 'PEDIDOS', 'TOTAL']],
+            body: sellerTableData,
+            theme: 'grid',
+            headStyles: { fillColor: [0, 0, 0], textColor: 255, fontStyle: 'bold' },
+            styles: { fontSize: 9, textColor: 0, lineColor: 0 },
+          });
+          
+          currentY = (doc as any).lastAutoTable.finalY + 15;
+        }
+
+        // --- Top Products ---
+        doc.setFontSize(12);
+        doc.text('PRODUTOS MAIS VENDIDOS', 14, currentY);
+        
+        const productTableData = topProducts.map(p => [p.name.toUpperCase(), p.qty, formatCurrency(p.total)]);
+        
+        autoTable(doc, {
+          startY: currentY + 5,
+          head: [['PRODUTO', 'QTD', 'RECEITA']],
+          body: productTableData,
+          theme: 'grid',
+          headStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: 'bold', lineColor: 0 },
+          styles: { fontSize: 9, textColor: 0, lineColor: 0 },
+        });
+
+        currentY = (doc as any).lastAutoTable.finalY + 15;
+
+        // --- Detailed List ---
+        doc.addPage(); // Start details on new page
+        doc.setFontSize(12);
+        doc.text('DETALHAMENTO DE PEDIDOS', 14, 20);
+
+        const detailsData = reportData.map(o => [
+          formatDate(o.created_at),
+          `#${o.id.slice(0, 6)}`,
+          o.clients.nome_fantasia.substring(0, 20),
+          sellers.find(s => s.id === o.clients.vendedor_id)?.full_name.split(' ')[0] || '-',
+          o.status.toUpperCase(),
+          formatCurrency(o.total_amount)
+        ]);
+
+        autoTable(doc, {
+          startY: 25,
+          head: [['DATA', 'ID', 'CLIENTE', 'VEND.', 'STATUS', 'VALOR']],
+          body: detailsData,
+          theme: 'plain',
+          headStyles: { fillColor: [0, 0, 0], textColor: 255, fontStyle: 'bold' },
+          styles: { fontSize: 8, cellPadding: 3 },
+          columnStyles: { 5: { halign: 'right' } }
+        });
+
+        // Add Footer
+        const pageCount = doc.internal.pages.length - 1;
+        for (let i = 1; i <= pageCount; i++) {
+          doc.setPage(i);
+          doc.setFontSize(8);
+          doc.text(`Página ${i} de ${pageCount}`, doc.internal.pageSize.width - 20, doc.internal.pageSize.height - 10, { align: 'right' });
+          doc.text('Portal Objetivus - Relatório Gerencial', 14, doc.internal.pageSize.height - 10);
+        }
+
+        doc.save(`relatorio_gerencial_${new Date().toISOString().split('T')[0]}.pdf`);
+      }
+
+      toast.success('Relatório gerado com sucesso!');
+      setIsReportModalOpen(false);
+
+    } catch (error) {
+      console.error(error);
+      toast.error('Erro ao gerar relatório.');
+    } finally {
+      setIsGeneratingReport(false);
     }
   };
 
@@ -326,8 +591,13 @@ export default function SalesManagement() {
     }
   };
 
-  const getStatusConfig = (status: string) => {
-    return ORDER_STATUSES.find(s => s.value === status) || ORDER_STATUSES[0];
+  const toggleReportStatus = (status: string) => {
+    setReportConfig(prev => {
+      const newStatuses = prev.statuses.includes(status)
+        ? prev.statuses.filter(s => s !== status)
+        : [...prev.statuses, status];
+      return { ...prev, statuses: newStatuses };
+    });
   };
 
   if (!isAdmin) return <div className="p-8 text-center text-black font-bold uppercase">Acesso restrito.</div>;
@@ -337,9 +607,18 @@ export default function SalesManagement() {
       <PageHeader 
         title="Gestão de Vendas" 
         subtitle={`Segunda-Feira, ${new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })} • Analise o desempenho da sua equipe comercial.`}
+        action={
+          <Button 
+            onClick={() => setIsReportModalOpen(true)} 
+            leftIcon={<FileBarChart size={18} />}
+            className="shadow-sharp hover:translate-y-0.5 hover:shadow-none transition-all"
+          >
+            RELATÓRIO GERENCIAL
+          </Button>
+        }
       />
 
-      {/* --- Filters Section --- */}
+      {/* Main Dashboard Content */}
       <div className="bg-white p-6 border-2 border-black shadow-sharp">
         <div className="flex flex-col lg:flex-row gap-6 items-end">
           <div className="w-full lg:w-1/3 space-y-2">
@@ -401,7 +680,7 @@ export default function SalesManagement() {
         </div>
       </div>
 
-      {/* --- Metrics Cards --- */}
+      {/* Metrics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <MetricCard 
           title="Vendas no Mês" 
@@ -423,11 +702,9 @@ export default function SalesManagement() {
         />
       </div>
 
-      {/* --- Orders List --- */}
+      {/* Orders List */}
       <div className="space-y-4">
-        {/* Toolbar */}
         <div className="bg-white p-3 border-2 border-black shadow-sharp flex flex-col md:flex-row gap-4 items-center">
-          {/* Select All Checkbox */}
           <div className="pl-2 pr-2 flex items-center h-full">
              <button 
                onClick={toggleSelectAll}
@@ -468,7 +745,7 @@ export default function SalesManagement() {
           </div>
         </div>
 
-        {/* Batch Action Floating Bar */}
+        {/* Batch Action Bar */}
         {selectedOrders.size > 0 && (
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-black text-white px-8 py-4 shadow-sharp border-2 border-white flex items-center gap-6 animate-in slide-in-from-bottom-4">
             <span className="font-bold text-sm uppercase tracking-wide">{selectedOrders.size} SELECIONADOS</span>
@@ -490,7 +767,6 @@ export default function SalesManagement() {
           </div>
         )}
 
-        {/* List Content */}
         {loading ? (
           <div className="py-20 flex justify-center">
             <Loader2 className="animate-spin text-black" size={48} />
@@ -520,13 +796,11 @@ export default function SalesManagement() {
                     isExpanded ? "shadow-sharp" : "shadow-sm hover:shadow-sharp"
                   )}
                 >
-                  {/* Card Header Row */}
                   <div 
                     className="p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 cursor-pointer"
                     onClick={() => setExpandedOrder(isExpanded ? null : order.id)}
                   >
                     <div className="flex items-center gap-4 w-full md:w-auto">
-                      {/* Checkbox */}
                       <div onClick={(e) => { e.stopPropagation(); toggleSelectOrder(order.id); }}>
                         {isSelected ? (
                           <CheckSquare size={24} className="text-black cursor-pointer" />
@@ -535,12 +809,10 @@ export default function SalesManagement() {
                         )}
                       </div>
 
-                      {/* Icon Box */}
                       <div className="h-12 w-12 bg-black text-white flex items-center justify-center shrink-0 border-2 border-black">
                         <FileText size={24} strokeWidth={1.5} />
                       </div>
                       
-                      {/* Info */}
                       <div className="min-w-0">
                         <h3 className="text-xl font-black text-black tracking-tighter flex items-center gap-2 uppercase">
                           #{order.id.slice(0, 8)}
@@ -563,15 +835,13 @@ export default function SalesManagement() {
                       </div>
                     </div>
 
-                    {/* Right Side: Status, Actions & Total */}
                     <div className="flex items-center gap-6 w-full md:w-auto justify-between md:justify-end pl-[88px] md:pl-0 border-t-2 border-black md:border-t-0 pt-4 md:pt-0 mt-2 md:mt-0">
                       
-                      <div className={cn("px-3 py-1.5 text-xs font-bold uppercase tracking-wider flex items-center gap-2", statusConfig.style)}>
+                      <div className={cn("px-3 py-1.5 text-xs font-bold uppercase tracking-wider flex items-center gap-2 border-2", statusConfig.style)}>
                         <StatusIcon size={14} />
                         {statusConfig.label}
                       </div>
 
-                      {/* Quick Actions */}
                       <div className="flex items-center gap-2 mr-2">
                          <button 
                            onClick={(e) => handleSinglePrint(order, e)}
@@ -603,18 +873,15 @@ export default function SalesManagement() {
                     </div>
                   </div>
 
-                  {/* Expanded Details */}
                   {isExpanded && (
                     <div className="border-t-2 border-black bg-white p-6 animate-in slide-in-from-top-2">
                       
-                      {/* Timeline */}
                       <div className="mb-8 border-2 border-black p-4 bg-white">
                         <h4 className="text-xs font-black text-black uppercase tracking-widest mb-4 flex items-center gap-2 border-b-2 border-black pb-2 w-fit">
                           <History size={14} />
                           Histórico
                         </h4>
                         <div className="flex flex-col gap-4 pl-2">
-                          {/* Initial */}
                           <div className="flex items-center gap-4 text-sm">
                             <div className="w-3 h-3 bg-black shrink-0"></div>
                             <span className="text-black w-36 text-xs font-mono font-bold">{formatDateTime(order.created_at)}</span>
@@ -624,7 +891,6 @@ export default function SalesManagement() {
                             </span>
                           </div>
                           
-                          {/* Updates */}
                           {order.status_history && order.status_history.map((history, idx) => {
                             const histConfig = getStatusConfig(history.status);
                             return (
@@ -633,7 +899,7 @@ export default function SalesManagement() {
                                 <span className="text-black w-36 text-xs font-mono font-bold">{formatDateTime(history.updated_at)}</span>
                                 <div className="flex items-center gap-2">
                                   <span className="text-xs font-bold uppercase">Status:</span>
-                                  <span className={cn("text-[10px] font-bold uppercase px-2 py-0.5", histConfig.style)}>
+                                  <span className={cn("text-[10px] font-bold uppercase px-2 py-0.5 border", histConfig.style)}>
                                     {histConfig.label}
                                   </span>
                                 </div>
@@ -676,6 +942,153 @@ export default function SalesManagement() {
           </div>
         )}
       </div>
+
+      {/* Admin Report Modal */}
+      <Modal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        title="CONFIGURAR RELATÓRIO GERENCIAL"
+      >
+        <div className="space-y-8">
+          
+          {/* 1. Scope */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-black text-black uppercase border-b-2 border-black pb-1 flex items-center gap-2">
+              <User size={16} />
+              1. Filtros de Entidade
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-gray-500 uppercase">Vendedor</label>
+                <select
+                  value={reportConfig.sellerId}
+                  onChange={(e) => setReportConfig({ ...reportConfig, sellerId: e.target.value, clientId: 'all' })}
+                  className="w-full h-10 pl-3 pr-8 bg-white border border-black text-sm font-bold text-black focus:ring-1 focus:ring-black outline-none uppercase"
+                >
+                  <option value="all">TODOS OS VENDEDORES</option>
+                  {sellers.map(seller => (
+                    <option key={seller.id} value={seller.id}>
+                      {seller.full_name.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-gray-500 uppercase">Cliente</label>
+                <select
+                  value={reportConfig.clientId}
+                  onChange={(e) => setReportConfig({ ...reportConfig, clientId: e.target.value })}
+                  className="w-full h-10 pl-3 pr-8 bg-white border border-black text-sm font-bold text-black focus:ring-1 focus:ring-black outline-none uppercase"
+                >
+                  <option value="all">TODOS OS CLIENTES</option>
+                  {clients.map(client => (
+                    <option key={client.id} value={client.id}>
+                      {client.nome_fantasia.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Date Range */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-black text-black uppercase border-b-2 border-black pb-1 flex items-center gap-2">
+              <Calendar size={16} />
+              2. Período
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input
+                type="date"
+                label="Data Inicial"
+                value={reportConfig.startDate}
+                onChange={(e) => setReportConfig({ ...reportConfig, startDate: e.target.value })}
+              />
+              <Input
+                type="date"
+                label="Data Final"
+                value={reportConfig.endDate}
+                onChange={(e) => setReportConfig({ ...reportConfig, endDate: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {/* 3. Status Filter */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-black text-black uppercase border-b-2 border-black pb-1 flex items-center gap-2">
+              <Filter size={16} />
+              3. Filtrar Status
+            </h4>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {ORDER_STATUSES.map((status) => {
+                const isSelected = reportConfig.statuses.includes(status.value);
+                return (
+                  <button
+                    key={status.value}
+                    onClick={() => toggleReportStatus(status.value)}
+                    className={cn(
+                      "flex items-center gap-2 px-3 py-2 border-2 text-xs font-bold uppercase transition-all",
+                      isSelected 
+                        ? "bg-black text-white border-black" 
+                        : "bg-white text-black border-gray-200 hover:border-black"
+                    )}
+                  >
+                    {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+                    {status.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-gray-500 font-medium">* Se nenhum for selecionado, todos serão incluídos.</p>
+          </div>
+
+          {/* 4. Format */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-black text-black uppercase border-b-2 border-black pb-1 flex items-center gap-2">
+              <FileText size={16} />
+              4. Formato
+            </h4>
+            <div className="flex gap-4">
+              <button
+                onClick={() => setReportConfig({ ...reportConfig, format: 'pdf' })}
+                className={cn(
+                  "flex-1 py-3 border-2 font-bold uppercase transition-all flex items-center justify-center gap-2",
+                  reportConfig.format === 'pdf' 
+                    ? "bg-black text-white border-black" 
+                    : "bg-white text-black border-gray-200 hover:border-black"
+                )}
+              >
+                <FileText size={20} /> PDF (Analítico)
+              </button>
+              <button
+                onClick={() => setReportConfig({ ...reportConfig, format: 'csv' })}
+                className={cn(
+                  "flex-1 py-3 border-2 font-bold uppercase transition-all flex items-center justify-center gap-2",
+                  reportConfig.format === 'csv' 
+                    ? "bg-black text-white border-black" 
+                    : "bg-white text-black border-gray-200 hover:border-black"
+                )}
+              >
+                <FileBarChart size={20} /> CSV (Excel)
+              </button>
+            </div>
+          </div>
+
+          <div className="pt-6 border-t-2 border-black flex justify-end gap-3">
+            <Button variant="ghost" onClick={() => setIsReportModalOpen(false)}>
+              CANCELAR
+            </Button>
+            <Button 
+              onClick={generateAdminReport} 
+              isLoading={isGeneratingReport}
+              leftIcon={<Download size={18} />}
+            >
+              GERAR RELATÓRIO
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

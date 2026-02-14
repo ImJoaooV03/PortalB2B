@@ -46,21 +46,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setLoading(false);
           }
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error initializing session:', err);
+        
+        // FIX: Handle invalid refresh token by forcing sign out to clear local storage
+        if (err?.message?.includes('Refresh Token Not Found') || err?.code === 'refresh_token_not_found') {
+          console.warn('Session invalid, clearing local storage...');
+          await supabase.auth.signOut().catch(() => {}); // Ignore errors during signout
+          if (mounted) {
+            setSession(null);
+            setUser(null);
+            setProfile(null);
+          }
+        }
+        
         if (mounted) setLoading(false);
       }
     };
 
     initSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (mounted) {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (!session?.user) {
-          setProfile(null);
-          setLoading(false);
+        // Handle explicit sign out event or session update
+        if (event === 'SIGNED_OUT') {
+            setSession(null);
+            setUser(null);
+            setProfile(null);
+            setLoading(false);
+        } else {
+            setSession(session);
+            setUser(session?.user ?? null);
+            if (!session?.user) {
+              setProfile(null);
+              setLoading(false);
+            }
         }
       }
     });
@@ -103,15 +123,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (err) {
         console.error('Unexpected error fetching profile:', err);
       } finally {
-        // Only finish loading if we are done retrying or succeeded
         if (mounted) {
-           // We set loading false in finally, but if we are retrying (returned early above), 
-           // this finally block runs for the *first* call. 
-           // However, since we want to keep "loading" true during retries, we should only set it false
-           // if we are NOT retrying.
-           // The logic above returns early on retry, so this finally block WONT run for the retry path?
-           // Actually, 'return' inside try triggers finally.
-           // So we need a check.
+           // Ensure loading is set to false after profile attempt
            if (retryCount === 0 || retryCount >= maxRetries || profile) {
              setLoading(false);
            }

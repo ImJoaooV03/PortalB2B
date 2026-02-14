@@ -1,27 +1,46 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Product } from '../lib/types';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Search, Edit2, Trash2, Package, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { useToast } from '../contexts/ToastContext';
+import { 
+  Plus, 
+  Search, 
+  Edit2, 
+  Trash2, 
+  Package, 
+  Image as ImageIcon, 
+  Loader2, 
+  DollarSign,
+  Upload,
+  Download,
+  FileSpreadsheet,
+  HelpCircle
+} from 'lucide-react';
 import Modal from '../components/ui/Modal';
 import ImageUpload from '../components/ui/ImageUpload';
 import { useForm } from 'react-hook-form';
-import { cn } from '../lib/utils';
+import { formatCurrency } from '../lib/utils';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Badge from '../components/ui/Badge';
 import PageHeader from '../components/ui/PageHeader';
+import Papa from 'papaparse';
 
 export default function Products() {
   const { isClient, user } = useAuth();
+  const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imageRemoved, setImageRemoved] = useState(false);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<Partial<Product>>();
 
@@ -45,6 +64,163 @@ export default function Products() {
     }
   }
 
+  // --- CSV Logic ---
+
+  const handleExportCSV = () => {
+    if (products.length === 0) {
+      toast.info('Nenhum produto para exportar.');
+      return;
+    }
+
+    // Define headers and map data (Removed IMAGEM_URL)
+    const csvData = products.map(p => ({
+      NOME: p.name,
+      SKU: p.sku,
+      DESCRICAO: p.description || '',
+      PRECO_BASE: p.base_price,
+      STATUS: p.status
+    }));
+
+    const csv = Papa.unparse(csvData, {
+      quotes: true,
+      delimiter: ",",
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `produtos_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleDownloadTemplate = () => {
+    // Removed IMAGEM_URL from template
+    const templateData = [
+      {
+        NOME: "Produto Exemplo",
+        SKU: "PROD-001",
+        DESCRICAO: "Descrição detalhada do produto",
+        PRECO_BASE: "150.00"
+      },
+      {
+        NOME: "Outro Produto",
+        SKU: "PROD-002",
+        DESCRICAO: "",
+        PRECO_BASE: "50.50"
+      }
+    ];
+
+    const csv = Papa.unparse(templateData);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'modelo_importacao_produtos.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setImporting(true);
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        const rows = results.data as any[];
+        const newProducts: any[] = [];
+        const errors: string[] = [];
+
+        // Validate and Transform
+        rows.forEach((row, index) => {
+          const lineNum = index + 2; // +1 header, +1 zero-index
+          
+          if (!row.NOME || !row.SKU || !row.PRECO_BASE) {
+            errors.push(`Linha ${lineNum}: Campos NOME, SKU e PRECO_BASE são obrigatórios.`);
+            return;
+          }
+
+          // Clean currency string if necessary
+          let priceString = String(row.PRECO_BASE).replace('R$', '').trim();
+          if (priceString.includes(',') && !priceString.includes('.')) {
+             priceString = priceString.replace('.', '').replace(',', '.');
+          }
+          const price = parseFloat(priceString);
+
+          if (isNaN(price)) {
+            errors.push(`Linha ${lineNum}: Preço inválido.`);
+            return;
+          }
+
+          newProducts.push({
+            name: row.NOME,
+            sku: row.SKU,
+            description: row.DESCRICAO || '',
+            base_price: price,
+            image: null, // Always null for CSV import
+            status: 'active',
+            created_by: user?.id
+          });
+        });
+
+        if (errors.length > 0) {
+          toast.error(`Erros encontrados:\n${errors.slice(0, 3).join('\n')}${errors.length > 3 ? '...' : ''}`);
+          setImporting(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          return;
+        }
+
+        if (newProducts.length === 0) {
+          toast.info('Nenhum produto válido encontrado no arquivo.');
+          setImporting(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          return;
+        }
+
+        try {
+          // Batch Insert
+          const { error } = await supabase.from('products').insert(newProducts);
+          
+          if (error) {
+            if (error.code === '23505') { // Unique violation
+              toast.error('Erro: Alguns SKUs já existem no sistema.');
+            } else {
+              throw error;
+            }
+          } else {
+            toast.success(`${newProducts.length} produtos importados com sucesso!`);
+            fetchProducts();
+          }
+        } catch (err: any) {
+          console.error(err);
+          toast.error('Erro ao salvar produtos no banco de dados.');
+        } finally {
+          setImporting(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+      },
+      error: (err) => {
+        console.error(err);
+        toast.error('Erro ao ler o arquivo CSV.');
+        setImporting(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    });
+  };
+
+  // --- End CSV Logic ---
+
   const uploadImage = async (file: File): Promise<string | null> => {
     try {
       const fileExt = file.name.split('.').pop();
@@ -61,7 +237,7 @@ export default function Products() {
       return data.publicUrl;
     } catch (error) {
       console.error('Error uploading image:', error);
-      alert('Erro ao fazer upload da imagem.');
+      toast.error('Erro ao fazer upload da imagem.');
       return null;
     }
   };
@@ -82,16 +258,18 @@ export default function Products() {
       if (editingProduct) {
         const { error } = await supabase.from('products').update(payload).eq('id', editingProduct.id);
         if (error) throw error;
+        toast.success('Produto atualizado!');
       } else {
-        const { error } = await supabase.from('products').insert([{ ...payload, status: 'active' }]);
+        const { error } = await supabase.from('products').insert([{ ...payload, status: 'active', created_by: user?.id }]);
         if (error) throw error;
+        toast.success('Produto criado!');
       }
       
       await fetchProducts();
       closeModal();
     } catch (error) {
       console.error('Error saving product:', error);
-      alert('Erro ao salvar produto.');
+      toast.error('Erro ao salvar produto.');
     }
   };
 
@@ -101,21 +279,23 @@ export default function Products() {
       const { error } = await supabase.from('products').delete().eq('id', id);
       if (error) throw error;
       setProducts(products.filter(p => p.id !== id));
+      toast.success('Produto excluído.');
     } catch (error) {
       console.error('Error deleting product:', error);
-      alert('Erro ao excluir produto.');
+      toast.error('Erro ao excluir produto. Verifique se está em uso.');
     }
   };
 
   const openModal = (product?: Product) => {
     setSelectedFile(null);
     setImageRemoved(false);
+    
     if (product) {
       setEditingProduct(product);
       reset(product);
     } else {
       setEditingProduct(null);
-      reset({ status: 'active' });
+      reset({ status: 'active', base_price: 0 });
     }
     setIsModalOpen(true);
   };
@@ -136,19 +316,57 @@ export default function Products() {
   if (isClient) return <div className="p-8 text-center text-black font-bold uppercase">Acesso restrito.</div>;
 
   return (
-    <div className="animate-in fade-in duration-500">
+    <div className="animate-in fade-in duration-500 pb-12">
       <PageHeader 
         title="Produtos"
         subtitle="Gerencie seu catálogo de produtos"
         action={
-          <Button onClick={() => openModal()} leftIcon={<Plus size={18} />}>
-            NOVO PRODUTO
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              className="hidden" 
+              accept=".csv" 
+              onChange={handleFileChange} 
+            />
+            
+            <Button 
+              variant="secondary" 
+              onClick={handleDownloadTemplate} 
+              leftIcon={<FileSpreadsheet size={18} />}
+              title="Baixar modelo de planilha"
+            >
+              MODELO
+            </Button>
+
+            <Button 
+              variant="secondary" 
+              onClick={handleExportCSV} 
+              leftIcon={<Download size={18} />}
+              title="Exportar produtos atuais"
+            >
+              EXPORTAR
+            </Button>
+
+            <Button 
+              variant="secondary" 
+              onClick={handleImportClick} 
+              isLoading={importing}
+              leftIcon={<Upload size={18} />}
+              title="Importar produtos via CSV"
+            >
+              IMPORTAR
+            </Button>
+
+            <Button onClick={() => openModal()} leftIcon={<Plus size={18} />}>
+              NOVO PRODUTO
+            </Button>
+          </div>
         }
       />
 
       <div className="bg-white border-2 border-black shadow-sharp">
-        <div className="p-5 border-b-2 border-black bg-white">
+        <div className="p-5 border-b-2 border-black bg-white flex flex-col md:flex-row gap-4 justify-between items-center">
           <Input 
             placeholder="BUSCAR POR NOME OU SKU..."
             value={searchTerm}
@@ -156,6 +374,10 @@ export default function Products() {
             icon={<Search size={18} />}
             className="max-w-md"
           />
+          <div className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1">
+            <HelpCircle size={14} />
+            Total: {filteredProducts.length} produtos
+          </div>
         </div>
 
         {loading ? (
@@ -168,6 +390,7 @@ export default function Products() {
               <Package size={32} />
             </div>
             <p className="font-bold uppercase tracking-wide">Nenhum produto encontrado</p>
+            <p className="text-sm text-gray-500 mt-2">Cadastre manualmente ou importe uma planilha.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -176,6 +399,7 @@ export default function Products() {
                 <tr>
                   <th className="px-6 py-4">Produto</th>
                   <th className="px-6 py-4">SKU</th>
+                  <th className="px-6 py-4">Preço Base</th>
                   <th className="px-6 py-4">Status</th>
                   <th className="px-6 py-4 text-right">Ações</th>
                 </tr>
@@ -199,6 +423,9 @@ export default function Products() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-black font-mono font-bold text-xs">{product.sku}</td>
+                    <td className="px-6 py-4 text-black font-bold">
+                      {formatCurrency(product.base_price || 0)}
+                    </td>
                     <td className="px-6 py-4">
                       <Badge variant={product.status === 'active' ? 'success' : 'neutral'}>
                         {product.status === 'active' ? 'ATIVO' : 'INATIVO'}
@@ -237,50 +464,70 @@ export default function Products() {
         onClose={closeModal}
         title={editingProduct ? 'EDITAR PRODUTO' : 'NOVO PRODUTO'}
       >
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <Input
-                label="Nome do Produto"
-                {...register('name', { required: 'Nome é obrigatório' })}
-                error={errors.name?.message}
-                placeholder="EX: CADEIRA ERGONÔMICA"
-              />
-            </div>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+          {/* Dados Básicos */}
+          <div className="space-y-6">
             
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Input
+                  label="Nome do Produto"
+                  {...register('name', { required: 'Nome é obrigatório' })}
+                  error={errors.name?.message}
+                  placeholder="EX: CADEIRA ERGONÔMICA"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Input
+                  label="SKU"
+                  {...register('sku', { required: 'SKU é obrigatório' })}
+                  error={errors.sku?.message}
+                  placeholder="EX: CAD-001"
+                />
+              </div>
+            </div>
+
             <div className="space-y-2">
-              <Input
-                label="SKU"
-                {...register('sku', { required: 'SKU é obrigatório' })}
-                error={errors.sku?.message}
-                placeholder="EX: CAD-001"
+              <label className="text-sm font-bold text-black block uppercase">Descrição</label>
+              <textarea
+                {...register('description')}
+                rows={3}
+                className="w-full px-3 py-2 border border-black rounded-none focus:ring-1 focus:ring-black focus:border-black outline-none resize-none text-sm"
+                placeholder="DETALHES DO PRODUTO..."
               />
             </div>
-          </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-bold text-black block uppercase">Descrição</label>
-            <textarea
-              {...register('description')}
-              rows={3}
-              className="w-full px-3 py-2 border border-black rounded-none focus:ring-1 focus:ring-black focus:border-black outline-none resize-none text-sm"
-              placeholder="DETALHES DO PRODUTO..."
+            <div className="space-y-2">
+              <Input
+                label="Valor Base (R$)"
+                type="number"
+                step="0.01"
+                min="0"
+                {...register('base_price', { required: 'Preço base é obrigatório', min: 0 })}
+                error={errors.base_price?.message}
+                placeholder="0.00"
+                icon={<DollarSign size={16} />}
+              />
+              <p className="text-xs text-gray-500 font-medium">
+                Preço de tabela sem descontos.
+              </p>
+            </div>
+
+            <ImageUpload 
+              value={editingProduct?.image}
+              onChange={(file) => {
+                setSelectedFile(file);
+                if (file) setImageRemoved(false);
+              }}
+              onRemove={() => {
+                setSelectedFile(null);
+                setImageRemoved(true);
+              }}
             />
           </div>
 
-          <ImageUpload 
-            value={editingProduct?.image}
-            onChange={(file) => {
-              setSelectedFile(file);
-              if (file) setImageRemoved(false);
-            }}
-            onRemove={() => {
-              setSelectedFile(null);
-              setImageRemoved(true);
-            }}
-          />
-
-          <div className="flex items-center gap-2 pt-2">
+          <div className="flex items-center gap-2 pt-2 border-t-2 border-black mt-6">
             <input
               type="checkbox"
               id="status"
@@ -292,7 +539,7 @@ export default function Products() {
             <label htmlFor="status" className="text-sm font-bold text-black cursor-pointer select-none uppercase">Produto Ativo</label>
           </div>
 
-          <div className="flex justify-end gap-3 pt-6 border-t border-black mt-6">
+          <div className="flex justify-end gap-3">
             <Button type="button" variant="ghost" onClick={closeModal}>
               CANCELAR
             </Button>

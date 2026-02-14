@@ -17,6 +17,7 @@ export interface Product {
   name: string;
   description: string | null;
   image: string | null;
+  base_price: number;
   attributes: any;
   status: 'active' | 'inactive';
   created_by: string;
@@ -40,10 +41,11 @@ export interface PriceTable {
   name: string;
   active: boolean;
   min_order: number;
+  valid_from?: string | null; // New
+  valid_until?: string | null; // New
   created_at: string;
   // Joined fields
   clients?: Client;
-  // Profiles can be returned as an object or array depending on the query/client version
   profiles?: { full_name: string | null } | { full_name: string | null }[]; 
 }
 
@@ -58,7 +60,6 @@ export interface PriceTableItem {
   products?: Product;
 }
 
-// New Types for Orders
 export interface StatusHistoryItem {
   status: string;
   updated_at: string;

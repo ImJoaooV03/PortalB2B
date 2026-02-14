@@ -88,10 +88,15 @@ export default function Users() {
         toast.success('Usuário atualizado!');
       } else {
         if (!data.password) { toast.error('Senha obrigatória.'); return; }
+        
+        // Sanitize inputs
+        const cleanEmail = data.email.trim();
+        const cleanPassword = data.password.trim();
+
         const tempSupabase = createTempClient();
         const { data: authData, error: authError } = await tempSupabase.auth.signUp({
-          email: data.email,
-          password: data.password,
+          email: cleanEmail,
+          password: cleanPassword,
           options: { data: { full_name: data.full_name, role: data.role } }
         });
         if (authError) throw authError;

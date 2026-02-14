@@ -14,7 +14,14 @@ interface CatalogItem {
   product_id: string;
   value: number;
   min_quantity: number;
-  products: { id: string; name: string; sku: string; description: string; image: string; };
+  products: { 
+    id: string; 
+    name: string; 
+    sku: string; 
+    description: string; 
+    image: string;
+    base_price: number;
+  };
 }
 
 type SortOption = 'name-asc' | 'price-asc' | 'price-desc';
@@ -46,23 +53,39 @@ export default function Catalog() {
 
   async function fetchCatalog(clientId: string) {
     try {
-      const { data: tableData, error: tableError } = await supabase
-        .from('price_tables')
-        .select('id')
-        .eq('client_id', clientId)
-        .eq('active', true)
-        .single();
+      const now = new Date();
 
-      if (tableError || !tableData) {
-        setError('Nenhuma tabela de preço ativa encontrada.');
+      // Fetch all active tables for this client
+      const { data: tables, error: tablesError } = await supabase
+        .from('price_tables')
+        .select('id, valid_from, valid_until')
+        .eq('client_id', clientId)
+        .eq('active', true);
+
+      if (tablesError) throw tablesError;
+
+      // Filter in JS to handle complex date logic (OR conditions)
+      const validTable = tables?.find(t => {
+        // Parse dates from DB (UTC) to JS Date objects (Local) for comparison
+        const fromDate = t.valid_from ? new Date(t.valid_from) : null;
+        const untilDate = t.valid_until ? new Date(t.valid_until) : null;
+
+        const isStarted = !fromDate || fromDate <= now;
+        const isNotEnded = !untilDate || untilDate >= now;
+        
+        return isStarted && isNotEnded;
+      });
+
+      if (!validTable) {
+        setError('Nenhuma tabela de preço ativa encontrada para o período atual.');
         setLoading(false);
         return;
       }
 
       const { data: itemsData, error: itemsError } = await supabase
         .from('price_table_items')
-        .select(`id, product_id, value, min_quantity, products (id, name, sku, description, image)`)
-        .eq('price_table_id', tableData.id);
+        .select(`id, product_id, value, min_quantity, products (id, name, sku, description, image, base_price)`)
+        .eq('price_table_id', validTable.id);
 
       if (itemsError) throw itemsError;
       setItems(itemsData as any || []);
@@ -185,66 +208,89 @@ export default function Catalog() {
         <>
           {viewMode === 'grid' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {filteredItems.map((item) => (
-                <div 
-                  key={item.id} 
-                  className="group bg-white border-2 border-black flex flex-col overflow-hidden hover:shadow-sharp transition-all duration-200"
-                >
-                  <div className="aspect-[4/3] bg-white border-b-2 border-black relative overflow-hidden p-6 flex items-center justify-center">
-                    {item.products.image ? (
-                      <img 
-                        src={item.products.image} 
-                        alt={item.products.name} 
-                        className="w-full h-full object-contain grayscale group-hover:grayscale-0 transition-all duration-500"
-                      />
-                    ) : (
-                      <ImageIcon className="text-gray-300" size={48} strokeWidth={1.5} />
-                    )}
-                    <div className="absolute top-3 right-3">
-                      <span className="bg-black text-white text-xs font-mono font-bold px-2 py-1 border border-black">
-                        {item.products.sku}
-                      </span>
-                    </div>
-                  </div>
-                  
-                  <div className="p-5 flex flex-col flex-1">
-                    <div className="mb-4">
-                      <h3 className="font-bold text-black text-lg leading-tight mb-1 line-clamp-2 uppercase">
-                        {item.products.name}
-                      </h3>
-                      <p className="text-sm text-gray-600 line-clamp-2 min-h-[2.5em] uppercase">
-                        {item.products.description || 'SEM DESCRIÇÃO.'}
-                      </p>
+              {filteredItems.map((item) => {
+                const hasDiscount = item.products.base_price > item.value;
+                const discountPercent = hasDiscount 
+                  ? Math.round(((item.products.base_price - item.value) / item.products.base_price) * 100) 
+                  : 0;
+
+                return (
+                  <div 
+                    key={item.id} 
+                    className="group bg-white border-2 border-black flex flex-col overflow-hidden hover:shadow-sharp transition-all duration-200"
+                  >
+                    <div className="aspect-[4/3] bg-white border-b-2 border-black relative overflow-hidden p-6 flex items-center justify-center">
+                      {item.products.image ? (
+                        <img 
+                          src={item.products.image} 
+                          alt={item.products.name} 
+                          className="w-full h-full object-contain grayscale group-hover:grayscale-0 transition-all duration-500"
+                        />
+                      ) : (
+                        <ImageIcon className="text-gray-300" size={48} strokeWidth={1.5} />
+                      )}
+                      
+                      <div className="absolute top-3 left-3 flex flex-col gap-1">
+                        {hasDiscount && (
+                          <span className="bg-black text-white text-[10px] font-bold px-2 py-1 uppercase tracking-wider">
+                            -{discountPercent}% OFF
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="absolute top-3 right-3">
+                        <span className="bg-white text-black text-xs font-mono font-bold px-2 py-1 border border-black">
+                          {item.products.sku}
+                        </span>
+                      </div>
                     </div>
                     
-                    <div className="mt-auto pt-4 border-t border-black flex items-end justify-between gap-4">
-                      <div>
-                        <p className="text-xs font-bold text-black uppercase mb-0.5">PREÇO</p>
-                        <p className="text-xl font-black text-black tracking-tight">
-                          {formatCurrency(item.value)}
+                    <div className="p-5 flex flex-col flex-1">
+                      <div className="mb-4">
+                        <h3 className="font-bold text-black text-lg leading-tight mb-1 line-clamp-2 uppercase">
+                          {item.products.name}
+                        </h3>
+                        <p className="text-sm text-gray-600 line-clamp-2 min-h-[2.5em] uppercase">
+                          {item.products.description || 'SEM DESCRIÇÃO.'}
                         </p>
                       </div>
                       
-                      {item.min_quantity > 1 && (
-                        <div className="text-right">
-                          <p className="text-xs font-bold text-black uppercase mb-0.5">MÍNIMO</p>
-                          <Badge variant="neutral" className="border-black">
-                            {item.min_quantity} UN
-                          </Badge>
+                      <div className="mt-auto pt-4 border-t border-black flex items-end justify-between gap-4">
+                        <div>
+                          <p className="text-xs font-bold text-black uppercase mb-0.5">PREÇO</p>
+                          <div className="flex flex-col">
+                            {hasDiscount && (
+                              <span className="text-xs text-gray-400 line-through font-medium">
+                                {formatCurrency(item.products.base_price)}
+                              </span>
+                            )}
+                            <p className="text-xl font-black text-black tracking-tight">
+                              {formatCurrency(item.value)}
+                            </p>
+                          </div>
                         </div>
-                      )}
-                    </div>
+                        
+                        {item.min_quantity > 1 && (
+                          <div className="text-right">
+                            <p className="text-xs font-bold text-black uppercase mb-0.5">MÍNIMO</p>
+                            <Badge variant="neutral" className="border-black">
+                              {item.min_quantity} UN
+                            </Badge>
+                          </div>
+                        )}
+                      </div>
 
-                    <button
-                      onClick={() => handleAddToCart(item)}
-                      className="w-full mt-5 bg-black hover:bg-white text-white hover:text-black border-2 border-black font-bold h-12 px-4 transition-all duration-200 flex items-center justify-center gap-2 uppercase tracking-wide"
-                    >
-                      <ShoppingCart size={18} />
-                      ADICIONAR
-                    </button>
+                      <button
+                        onClick={() => handleAddToCart(item)}
+                        className="w-full mt-5 bg-black hover:bg-white text-white hover:text-black border-2 border-black font-bold h-12 px-4 transition-all duration-200 flex items-center justify-center gap-2 uppercase tracking-wide"
+                      >
+                        <ShoppingCart size={18} />
+                        ADICIONAR
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -263,42 +309,57 @@ export default function Catalog() {
                     </tr>
                   </thead>
                   <tbody className="divide-y-2 divide-black">
-                    {filteredItems.map((item) => (
-                      <tr key={item.id} className="group hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="h-12 w-12 border border-black flex items-center justify-center p-1 bg-white">
-                            {item.products.image ? (
-                              <img src={item.products.image} alt="" className="w-full h-full object-contain grayscale" />
-                            ) : (
-                              <ImageIcon className="text-gray-300" size={20} />
+                    {filteredItems.map((item) => {
+                      const hasDiscount = item.products.base_price > item.value;
+                      return (
+                        <tr key={item.id} className="group hover:bg-gray-50 transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="h-12 w-12 border border-black flex items-center justify-center p-1 bg-white">
+                              {item.products.image ? (
+                                <img src={item.products.image} alt="" className="w-full h-full object-contain grayscale" />
+                              ) : (
+                                <ImageIcon className="text-gray-300" size={20} />
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <p className="font-bold text-black text-base uppercase">
+                              {item.products.name}
+                            </p>
+                            {hasDiscount && (
+                              <span className="text-[10px] font-bold bg-black text-white px-1.5 py-0.5 uppercase">
+                                Oferta
+                              </span>
                             )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <p className="font-bold text-black text-base uppercase">
-                            {item.products.name}
-                          </p>
-                        </td>
-                        <td className="px-6 py-4 hidden md:table-cell font-mono text-xs text-black">
-                          {item.products.sku}
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className="font-bold text-black text-lg">
-                            {formatCurrency(item.value)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <Badge variant="neutral">
-                            {item.min_quantity}
-                          </Badge>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <Button onClick={() => handleAddToCart(item)} size="sm" leftIcon={<ShoppingCart size={16} />}>
-                            ADD
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="px-6 py-4 hidden md:table-cell font-mono text-xs text-black">
+                            {item.products.sku}
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex flex-col">
+                              {hasDiscount && (
+                                <span className="text-xs text-gray-400 line-through">
+                                  {formatCurrency(item.products.base_price)}
+                                </span>
+                              )}
+                              <span className="font-bold text-black text-lg">
+                                {formatCurrency(item.value)}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <Badge variant="neutral">
+                              {item.min_quantity}
+                            </Badge>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <Button onClick={() => handleAddToCart(item)} size="sm" leftIcon={<ShoppingCart size={16} />}>
+                              ADD
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

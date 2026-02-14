@@ -2,14 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { PriceTable, Client } from '../lib/types';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Search, Trash2, FileText, Loader2, User, Building2, ShieldCheck } from 'lucide-react';
+import { Plus, Search, Trash2, FileText, Loader2, User, Building2, ShieldCheck, CalendarClock, AlertTriangle, Clock, XCircle, CheckCircle2 } from 'lucide-react';
 import Modal from '../components/ui/Modal';
 import { useForm } from 'react-hook-form';
-import { cn, formatCurrency } from '../lib/utils';
+import { cn, formatCurrency, formatDateTime } from '../lib/utils';
 import { Link, useNavigate } from 'react-router-dom';
 import PageHeader from '../components/ui/PageHeader';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
+import Badge from '../components/ui/Badge';
 
 export default function PriceTables() {
   const { isClient, isAdmin, user } = useAuth();
@@ -20,7 +21,11 @@ export default function PriceTables() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<Partial<PriceTable>>();
+  const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<Partial<PriceTable>>();
+  
+  // Watch dates to validate range
+  const validFrom = watch('valid_from');
+  const validUntil = watch('valid_until');
 
   useEffect(() => {
     fetchTables();
@@ -50,10 +55,33 @@ export default function PriceTables() {
 
   const onSubmit = async (data: Partial<PriceTable>) => {
     try {
+      // Validate dates
+      if (data.valid_from && data.valid_until && new Date(data.valid_from) > new Date(data.valid_until)) {
+        alert('A data de fim deve ser posterior à data de início.');
+        return;
+      }
+
+      // Convert local input time to UTC ISO string for DB
+      const validFromUTC = data.valid_from ? new Date(data.valid_from).toISOString() : null;
+      const validUntilUTC = data.valid_until ? new Date(data.valid_until).toISOString() : null;
+
+      // FIX: If dates are provided, set active to TRUE automatically so the schedule works immediately
+      const shouldActivate = !!(validFromUTC || validUntilUTC);
+
+      // If activating, deactivate others for this client first
+      if (shouldActivate && data.client_id) {
+         await supabase
+          .from('price_tables')
+          .update({ active: false })
+          .eq('client_id', data.client_id);
+      }
+
       const payload = {
         ...data,
-        active: false,
-        vendedor_id: user?.id
+        active: shouldActivate, // Auto-activate if scheduled
+        vendedor_id: user?.id,
+        valid_from: validFromUTC,
+        valid_until: validUntilUTC
       };
 
       const { data: newTable, error } = await supabase
@@ -105,6 +133,26 @@ export default function PriceTables() {
     return profileData.full_name?.toUpperCase() || 'DESCONHECIDO';
   };
 
+  const getTableStatus = (table: PriceTable) => {
+    // If inactive, it's inactive regardless of dates
+    if (!table.active) return { label: 'INATIVA', variant: 'neutral', icon: XCircle };
+    
+    const now = new Date().toISOString();
+    
+    // If active AND has future start date
+    if (table.valid_from && table.valid_from > now) {
+      return { label: 'AGENDADA', variant: 'warning', icon: Clock };
+    }
+    
+    // If active AND has past end date
+    if (table.valid_until && table.valid_until < now) {
+      return { label: 'EXPIRADA', variant: 'danger', icon: AlertTriangle };
+    }
+    
+    // Active and within range (or no range)
+    return { label: 'VIGENTE', variant: 'success', icon: CheckCircle2 };
+  };
+
   const filteredTables = tables.filter(t => 
     t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     t.clients?.nome_fantasia.toLowerCase().includes(searchTerm.toLowerCase())
@@ -150,6 +198,9 @@ export default function PriceTables() {
               const sellerName = getSellerName(table);
               const isMe = sellerName === 'VOCÊ';
               const isSystem = sellerName === 'SISTEMA';
+              const hasValidity = table.valid_from || table.valid_until;
+              const status = getTableStatus(table);
+              const StatusIcon = status.icon;
 
               return (
                 <Link 
@@ -161,24 +212,38 @@ export default function PriceTables() {
                     <div className="p-2.5 bg-black text-white border-2 border-black">
                       <FileText size={24} />
                     </div>
-                    <span className={cn(
-                      "px-2.5 py-1 text-xs font-bold uppercase border-2 border-black",
-                      table.active ? "bg-black text-white" : "bg-white text-black"
-                    )}>
-                      {table.active ? 'ATIVA' : 'INATIVA'}
-                    </span>
+                    <Badge variant={status.variant as any} className="flex items-center gap-1">
+                      <StatusIcon size={12} />
+                      {status.label}
+                    </Badge>
                   </div>
                   
                   <h3 className="font-black text-black text-lg mb-1 uppercase truncate">
                     {table.name}
                   </h3>
                   
-                  <div className="flex items-center gap-2 text-sm text-gray-600 mb-4 font-medium uppercase">
+                  <div className="flex items-center gap-2 text-sm text-gray-600 mb-2 font-medium uppercase">
                     <Building2 size={14} />
                     <span className="truncate">
                       {table.clients?.nome_fantasia || 'CLIENTE NÃO IDENTIFICADO'}
                     </span>
                   </div>
+
+                  {hasValidity && (
+                    <div className="mb-4 text-xs font-bold text-black bg-gray-100 p-2 border border-black flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5 uppercase">
+                        <CalendarClock size={12} />
+                        Período de Validade:
+                      </div>
+                      <div className="pl-4 font-mono">
+                        {table.valid_from ? formatDateTime(table.valid_from) : 'INÍCIO IMEDIATO'} 
+                        <br/>
+                        até 
+                        <br/>
+                        {table.valid_until ? formatDateTime(table.valid_until) : 'INDETERMINADO'}
+                      </div>
+                    </div>
+                  )}
 
                   {isAdmin && (
                     <div className="mt-auto mb-4 pt-3 border-t-2 border-black">
@@ -195,7 +260,7 @@ export default function PriceTables() {
                     </div>
                   )}
                   
-                  {!isAdmin && <div className="mt-auto mb-4"></div>}
+                  {!isAdmin && !hasValidity && <div className="mt-auto mb-4"></div>}
 
                   <div className="flex items-center justify-between text-sm pt-3 border-t-2 border-black">
                     <span className="font-bold text-black uppercase">
@@ -235,7 +300,7 @@ export default function PriceTables() {
             <label className="text-sm font-bold text-black block uppercase">Cliente</label>
             <select
               {...register('client_id', { required: 'Cliente é obrigatório' })}
-              className="w-full h-10 px-3 py-2 border border-black rounded-none focus:ring-1 focus:ring-black outline-none bg-white text-sm text-black"
+              className="w-full h-10 px-3 py-2 border border-black rounded-none focus:ring-1 focus:ring-black outline-none bg-white text-sm text-black uppercase"
             >
               <option value="">SELECIONE UM CLIENTE...</option>
               {clients.map(client => (
@@ -257,12 +322,38 @@ export default function PriceTables() {
             />
           </div>
 
+          <div className="p-4 bg-gray-50 border border-black">
+            <h4 className="text-sm font-black text-black uppercase mb-4 flex items-center gap-2">
+              <CalendarClock size={16} />
+              Período de Validade (Opcional)
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Input
+                  type="datetime-local"
+                  label="Válida a partir de"
+                  {...register('valid_from')}
+                />
+              </div>
+              <div className="space-y-2">
+                <Input
+                  type="datetime-local"
+                  label="Válida até"
+                  {...register('valid_until')}
+                />
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-2 font-medium">
+              * A tabela será ativada automaticamente se você definir datas.
+            </p>
+          </div>
+
           <div className="flex justify-end gap-3 pt-6 border-t border-black mt-6">
             <Button type="button" variant="ghost" onClick={closeModal}>
               CANCELAR
             </Button>
             <Button type="submit" isLoading={isSubmitting}>
-              CRIAR E EDITAR ITENS
+              CRIAR E ATIVAR
             </Button>
           </div>
         </form>

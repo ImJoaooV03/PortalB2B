@@ -469,6 +469,13 @@
   resolved "https://registry.yarnpkg.com/@types/pako/-/pako-2.0.4.tgz#c3575ef8125e176c345fa0e7b301c1db41170c15"
   integrity sha512-VWDCbrLeVXJM9fihYodcLiIv0ku+AlOa/TQ1SvYOaBuyrSKgEcro95LJyIsJ4vSo6BXIxOKxiJAat04CmST9Fw==
 
+"@types/papaparse@^5.5.2":
+  version "5.5.2"
+  resolved "https://registry.yarnpkg.com/@types/papaparse/-/papaparse-5.5.2.tgz#cb450a1cd183deb43728e593eb1ac2da60f4fa4d"
+  integrity sha512-gFnFp/JMzLHCwRf7tQHrNnfhN4eYBVYYI897CGX4MY1tzY9l2aLkVyx2IlKZ/SAqDbB3I1AOZW5gTMGGsqWliA==
+  dependencies:
+    "@types/node" "*"
+
 "@types/phoenix@^1.6.6":
   version "1.6.7"
   resolved "https://registry.yarnpkg.com/@types/phoenix/-/phoenix-1.6.7.tgz#75137b7ecf732ceaca284cf10c1552071cfff12f"
@@ -2374,6 +2381,11 @@ pako@^2.1.0:
   version "2.1.0"
   resolved "https://registry.yarnpkg.com/pako/-/pako-2.1.0.tgz#266cc37f98c7d883545d11335c00fbd4062c9a86"
   integrity sha512-w+eufiZ1WuJYgPXbV/PO3NCMEc3xqylkKHzp8bxp1uW4qaSNQUkwmLLEc3kKsfz8lpV1F8Ht3U1Cm+9Srog2ug==
+
+papaparse@^5.5.3:
+  version "5.5.3"
+  resolved "https://registry.yarnpkg.com/papaparse/-/papaparse-5.5.3.tgz#07f8994dec516c6dab266e952bed68e1de59fa9a"
+  integrity sha512-5QvjGxYVjxO59MGU2lHVYpRWBBtKHnlIAcSe1uNFCkkptUh63NFRj0FJQm7nR67puEruUci/ZkjmEFrjCAyP4A==
 
 parent-module@^1.0.0:
   version "1.0.1"

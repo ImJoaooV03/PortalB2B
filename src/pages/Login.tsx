@@ -22,10 +22,16 @@ export default function Login() {
     }
   }, [session, navigate]);
 
-  const translateError = (message: string) => {
+  const translateError = (error: any) => {
+    const message = error.message || '';
     if (message.includes('Database error')) return 'Erro interno ao criar perfil.';
-    if (message.includes('Invalid login credentials')) return 'Email ou senha incorretos.';
-    return message;
+    if (message.includes('Invalid login credentials') || error.code === 'invalid_credentials') {
+      return 'Email ou senha incorretos.';
+    }
+    if (message.includes('Email not confirmed')) {
+      return 'Email não confirmado. Verifique sua caixa de entrada.';
+    }
+    return message || 'Ocorreu um erro inesperado.';
   };
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -34,26 +40,30 @@ export default function Login() {
     setError(null);
     setSuccessMessage(null);
 
+    // Sanitize inputs to prevent whitespace errors
+    const cleanEmail = email.trim();
+    const cleanPassword = password.trim();
+
     try {
       if (isSignUp) {
         const { error: signUpError } = await supabase.auth.signUp({
-          email,
-          password,
+          email: cleanEmail,
+          password: cleanPassword,
           options: {
             data: {
-              full_name: email.split('@')[0], 
+              full_name: cleanEmail.split('@')[0], 
               role: 'cliente'
             }
           }
         });
         
         if (signUpError) throw signUpError;
-        setSuccessMessage('Conta criada com sucesso!');
+        setSuccessMessage('Conta criada com sucesso! Aguarde aprovação ou verifique seu email.');
         setIsSignUp(false);
       } else {
         const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
+          email: cleanEmail,
+          password: cleanPassword,
         });
         
         if (signInError) throw signInError;
@@ -61,7 +71,7 @@ export default function Login() {
       }
     } catch (err: any) {
       console.error("Auth Error:", err);
-      setError(translateError(err.message || 'Ocorreu um erro inesperado.'));
+      setError(translateError(err));
     } finally {
       setLoading(false);
     }
