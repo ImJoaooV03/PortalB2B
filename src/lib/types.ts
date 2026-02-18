@@ -41,8 +41,10 @@ export interface PriceTable {
   name: string;
   active: boolean;
   min_order: number;
-  valid_from?: string | null; // New
-  valid_until?: string | null; // New
+  payment_terms?: string | null; // New field
+  notes?: string | null; // New field
+  valid_from?: string | null;
+  valid_until?: string | null;
   created_at: string;
   // Joined fields
   clients?: Client;

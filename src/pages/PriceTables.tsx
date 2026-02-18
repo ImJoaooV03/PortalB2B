@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { PriceTable, Client } from '../lib/types';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Search, Trash2, FileText, Loader2, User, Building2, ShieldCheck, CalendarClock, AlertTriangle, Clock, XCircle, CheckCircle2 } from 'lucide-react';
+import { Plus, Search, Trash2, FileText, Loader2, User, Building2, ShieldCheck, CalendarClock, AlertTriangle, Clock, XCircle, CheckCircle2, CreditCard, StickyNote } from 'lucide-react';
 import Modal from '../components/ui/Modal';
 import { useForm } from 'react-hook-form';
 import { cn, formatCurrency, formatDateTime } from '../lib/utils';
@@ -81,7 +81,9 @@ export default function PriceTables() {
         active: shouldActivate, // Auto-activate if scheduled
         vendedor_id: user?.id,
         valid_from: validFromUTC,
-        valid_until: validUntilUTC
+        valid_until: validUntilUTC,
+        payment_terms: data.payment_terms,
+        notes: data.notes
       };
 
       const { data: newTable, error } = await supabase
@@ -312,13 +314,43 @@ export default function PriceTables() {
             {errors.client_id && <span className="text-xs text-black font-bold mt-1">⚠ {errors.client_id.message}</span>}
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <Input
+                label="Pedido Mínimo (R$)"
+                type="number"
+                step="0.01"
+                {...register('min_order', { min: 0 })}
+                placeholder="0.00"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Input
+                label="Condição de Pagamento"
+                {...register('payment_terms')}
+                placeholder="EX: 30/60/90 DIAS"
+                icon={<CreditCard size={18} />}
+                list="payment-terms-list"
+              />
+              <datalist id="payment-terms-list">
+                <option value="À VISTA" />
+                <option value="30 DIAS" />
+                <option value="30/60 DIAS" />
+                <option value="30/60/90 DIAS" />
+              </datalist>
+            </div>
+          </div>
+
           <div className="space-y-2">
-            <Input
-              label="Pedido Mínimo (R$)"
-              type="number"
-              step="0.01"
-              {...register('min_order', { min: 0 })}
-              placeholder="0.00"
+            <label className="text-sm font-bold text-black block uppercase flex items-center gap-2">
+              <StickyNote size={16} /> Observações
+            </label>
+            <textarea
+              {...register('notes')}
+              rows={3}
+              className="w-full px-3 py-2 border border-black rounded-none focus:ring-1 focus:ring-black focus:border-black outline-none resize-none text-sm text-black placeholder:text-gray-400"
+              placeholder="INFORMAÇÕES ADICIONAIS SOBRE ESTA TABELA..."
             />
           </div>
 

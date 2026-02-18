@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { PriceTable, PriceTableItem, Product } from '../lib/types';
-import { ArrowLeft, Plus, Trash2, Loader2, AlertCircle, Edit2, Tag, Info, Calculator, ArrowRight, CalendarClock, Clock, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Loader2, AlertCircle, Edit2, Tag, Info, Calculator, ArrowRight, CalendarClock, Clock, AlertTriangle, CheckCircle2, CreditCard, StickyNote } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { cn, formatCurrency, formatDateTime, formatForInput } from '../lib/utils';
 import Modal from '../components/ui/Modal';
@@ -122,6 +122,8 @@ export default function PriceTableEditor() {
       const payload = {
         name: data.name,
         min_order: data.min_order,
+        payment_terms: data.payment_terms,
+        notes: data.notes,
         valid_from: validFromUTC,
         valid_until: validUntilUTC
       };
@@ -178,6 +180,8 @@ export default function PriceTableEditor() {
       settingsForm.reset({ 
         name: table.name, 
         min_order: table.min_order,
+        payment_terms: table.payment_terms,
+        notes: table.notes,
         // Convert UTC DB time to Local Input Format
         valid_from: formatForInput(table.valid_from || ''),
         valid_until: formatForInput(table.valid_until || '')
@@ -320,6 +324,16 @@ export default function PriceTableEditor() {
                 <span>PEDIDO MÍNIMO:</span> 
                 <span className="font-mono">{formatCurrency(table.min_order)}</span>
               </span>
+              {table.payment_terms && (
+                <>
+                  <span className="hidden sm:inline">|</span>
+                  <span className="flex items-center gap-1.5">
+                    <CreditCard size={14} />
+                    <span>PAGAMENTO:</span> 
+                    <span>{table.payment_terms}</span>
+                  </span>
+                </>
+              )}
             </div>
             {(table.valid_from || table.valid_until) && (
               <div className="mt-3 text-xs font-bold text-black bg-gray-100 p-2 border border-black w-fit flex items-center gap-2 uppercase">
@@ -329,6 +343,12 @@ export default function PriceTableEditor() {
                   {' até '} 
                   {table.valid_until ? formatDateTime(table.valid_until) : 'INDETERMINADO'}
                 </span>
+              </div>
+            )}
+            {table.notes && (
+              <div className="mt-3 text-xs font-medium text-gray-600 flex items-start gap-2 max-w-2xl">
+                <StickyNote size={14} className="shrink-0 mt-0.5" />
+                <span className="uppercase">{table.notes}</span>
               </div>
             )}
           </div>
@@ -581,14 +601,44 @@ export default function PriceTableEditor() {
             />
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <Input
+                label="Pedido Mínimo (R$)"
+                type="number"
+                step="0.01"
+                {...settingsForm.register('min_order', { min: 0 })}
+                placeholder="0.00"
+                error={settingsForm.formState.errors.min_order?.message}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Input
+                label="Condição de Pagamento"
+                {...settingsForm.register('payment_terms')}
+                placeholder="EX: 30/60/90 DIAS"
+                icon={<CreditCard size={18} />}
+                list="payment-terms-list-edit"
+              />
+              <datalist id="payment-terms-list-edit">
+                <option value="À VISTA" />
+                <option value="30 DIAS" />
+                <option value="30/60 DIAS" />
+                <option value="30/60/90 DIAS" />
+              </datalist>
+            </div>
+          </div>
+
           <div className="space-y-2">
-            <Input
-              label="Pedido Mínimo (R$)"
-              type="number"
-              step="0.01"
-              {...settingsForm.register('min_order', { min: 0 })}
-              placeholder="0.00"
-              error={settingsForm.formState.errors.min_order?.message}
+            <label className="text-sm font-bold text-black block uppercase flex items-center gap-2">
+              <StickyNote size={16} /> Observações
+            </label>
+            <textarea
+              {...settingsForm.register('notes')}
+              rows={3}
+              className="w-full px-3 py-2 border border-black rounded-none focus:ring-1 focus:ring-black focus:border-black outline-none resize-none text-sm text-black placeholder:text-gray-400"
+              placeholder="INFORMAÇÕES ADICIONAIS SOBRE ESTA TABELA..."
             />
           </div>
 

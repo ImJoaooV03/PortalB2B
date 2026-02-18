@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../contexts/CartContext';
 import { useToast } from '../contexts/ToastContext';
-import { Loader2, AlertCircle, ShoppingCart, Image as ImageIcon, LayoutGrid, List, Search, ArrowUpDown, PackageX } from 'lucide-react';
+import { Loader2, AlertCircle, ShoppingCart, Image as ImageIcon, LayoutGrid, List, Search, ArrowUpDown, PackageX, CreditCard, Info } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
@@ -24,6 +24,11 @@ interface CatalogItem {
   };
 }
 
+interface ActiveTableInfo {
+  payment_terms: string | null;
+  notes: string | null;
+}
+
 type SortOption = 'name-asc' | 'price-asc' | 'price-desc';
 
 export default function Catalog() {
@@ -32,6 +37,7 @@ export default function Catalog() {
   const { toast } = useToast();
   
   const [items, setItems] = useState<CatalogItem[]>([]);
+  const [tableInfo, setTableInfo] = useState<ActiveTableInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,7 +64,7 @@ export default function Catalog() {
       // Fetch all active tables for this client
       const { data: tables, error: tablesError } = await supabase
         .from('price_tables')
-        .select('id, valid_from, valid_until')
+        .select('id, valid_from, valid_until, payment_terms, notes')
         .eq('client_id', clientId)
         .eq('active', true);
 
@@ -81,6 +87,11 @@ export default function Catalog() {
         setLoading(false);
         return;
       }
+
+      setTableInfo({
+        payment_terms: validTable.payment_terms,
+        notes: validTable.notes
+      });
 
       const { data: itemsData, error: itemsError } = await supabase
         .from('price_table_items')
@@ -162,6 +173,34 @@ export default function Catalog() {
             </button>
           </div>
         </div>
+
+        {/* Table Info Banner */}
+        {(tableInfo?.payment_terms || tableInfo?.notes) && (
+          <div className="bg-gray-50 border-2 border-black p-4 flex flex-col sm:flex-row gap-6 text-sm">
+            {tableInfo.payment_terms && (
+              <div className="flex items-start gap-3">
+                <div className="p-1.5 bg-black text-white shrink-0">
+                  <CreditCard size={16} />
+                </div>
+                <div>
+                  <p className="font-bold text-black uppercase text-xs tracking-wide mb-0.5">Condição de Pagamento</p>
+                  <p className="font-medium text-black uppercase">{tableInfo.payment_terms}</p>
+                </div>
+              </div>
+            )}
+            {tableInfo.notes && (
+              <div className="flex items-start gap-3">
+                <div className="p-1.5 bg-white border border-black text-black shrink-0">
+                  <Info size={16} />
+                </div>
+                <div>
+                  <p className="font-bold text-black uppercase text-xs tracking-wide mb-0.5">Observações</p>
+                  <p className="font-medium text-black uppercase">{tableInfo.notes}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="bg-white p-4 border-2 border-black flex flex-col md:flex-row gap-4 items-center shadow-sharp">
           <div className="relative flex-1 w-full">

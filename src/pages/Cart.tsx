@@ -3,24 +3,36 @@ import { useCart } from '../contexts/CartContext';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
-import { Trash2, ArrowRight, ShoppingBag, Loader2, AlertTriangle } from 'lucide-react';
+import { Trash2, ArrowRight, ShoppingBag, Loader2, AlertTriangle, CreditCard, Info } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import Button from '../components/ui/Button';
+
+interface TableInfo {
+  min_order: number;
+  payment_terms: string | null;
+  notes: string | null;
+}
 
 export default function Cart() {
   const { items, removeFromCart, updateQuantity, total, clearCart } = useCart();
   const { profile } = useAuth();
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
-  const [minOrder, setMinOrder] = useState(0);
+  const [tableInfo, setTableInfo] = useState<TableInfo>({ min_order: 0, payment_terms: null, notes: null });
 
   useEffect(() => {
-    if (profile?.client_id) fetchMinOrder(profile.client_id);
+    if (profile?.client_id) fetchTableInfo(profile.client_id);
   }, [profile]);
 
-  async function fetchMinOrder(clientId: string) {
-    const { data } = await supabase.from('price_tables').select('min_order').eq('client_id', clientId).eq('active', true).single();
-    if (data) setMinOrder(data.min_order);
+  async function fetchTableInfo(clientId: string) {
+    const { data } = await supabase
+      .from('price_tables')
+      .select('min_order, payment_terms, notes')
+      .eq('client_id', clientId)
+      .eq('active', true)
+      .single();
+      
+    if (data) setTableInfo(data);
   }
 
   const handleSubmitOrder = async () => {
@@ -53,7 +65,7 @@ export default function Cart() {
     );
   }
 
-  const isMinOrderMet = total >= minOrder;
+  const isMinOrderMet = total >= tableInfo.min_order;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -101,21 +113,42 @@ export default function Cart() {
         
         <div className="bg-gray-50 p-6 border-t-2 border-black">
           <div className="flex flex-col gap-4">
+            {/* Table Rules Info */}
+            {(tableInfo.payment_terms || tableInfo.notes) && (
+              <div className="mb-4 p-4 border border-black bg-white space-y-2">
+                <h4 className="text-xs font-black text-black uppercase tracking-widest border-b border-black pb-1 mb-2">Condições Comerciais</h4>
+                {tableInfo.payment_terms && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <CreditCard size={16} />
+                    <span className="font-bold uppercase">Pagamento:</span>
+                    <span className="uppercase">{tableInfo.payment_terms}</span>
+                  </div>
+                )}
+                {tableInfo.notes && (
+                  <div className="flex items-start gap-2 text-sm">
+                    <Info size={16} className="shrink-0 mt-0.5" />
+                    <span className="font-bold uppercase">Obs:</span>
+                    <span className="uppercase">{tableInfo.notes}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex justify-between items-center text-black font-medium uppercase">
               <span>Subtotal ({items.length} itens)</span>
               <span>{formatCurrency(total)}</span>
             </div>
             
-            {minOrder > 0 && (
+            {tableInfo.min_order > 0 && (
               <div className={cn(
                 "flex justify-between items-center text-sm px-3 py-2 border font-bold uppercase",
                 isMinOrderMet ? "bg-black text-white border-black" : "bg-white text-black border-black border-dashed"
               )}>
                 <span className="flex items-center gap-2">
                   {isMinOrderMet ? null : <AlertTriangle size={16} />}
-                  PEDIDO MÍNIMO: {formatCurrency(minOrder)}
+                  PEDIDO MÍNIMO: {formatCurrency(tableInfo.min_order)}
                 </span>
-                <span>{isMinOrderMet ? 'ATINGIDO' : `FALTAM ${formatCurrency(minOrder - total)}`}</span>
+                <span>{isMinOrderMet ? 'ATINGIDO' : `FALTAM ${formatCurrency(tableInfo.min_order - total)}`}</span>
               </div>
             )}
 
