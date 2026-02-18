@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { Profile, Client } from '../lib/types';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { Search, Loader2, Building2, UserPlus, User, Mail, Phone, Lock, CheckCircle2, Edit2, UserX } from 'lucide-react';
+import { Search, Loader2, Building2, UserPlus, User, Mail, Phone, Lock, CheckCircle2, Edit2, UserX, Trash2, AlertTriangle } from 'lucide-react';
 import Modal from '../components/ui/Modal';
 import PageHeader from '../components/ui/PageHeader';
 import Button from '../components/ui/Button';
@@ -116,6 +116,55 @@ export default function Users() {
     }
   };
 
+  const deleteUser = async (profileId: string) => {
+    if (profileId === user?.id) {
+      toast.error('Você não pode excluir sua própria conta.');
+      return;
+    }
+
+    const confirmDelete = window.confirm('TEM CERTEZA? Essa ação removerá o acesso deste usuário permanentemente.');
+    if (!confirmDelete) return;
+
+    try {
+      // 1. Unlink user from clients (set vendedor_id to null) to avoid FK constraint violation
+      const { error: unlinkError } = await supabase
+        .from('clients')
+        .update({ vendedor_id: null })
+        .eq('vendedor_id', profileId);
+
+      if (unlinkError) throw unlinkError;
+
+      // 2. Unlink user from products (set created_by to null) to avoid FK constraint violation
+      const { error: unlinkProductsError } = await supabase
+        .from('products')
+        .update({ created_by: null })
+        .eq('created_by', profileId);
+
+      if (unlinkProductsError) throw unlinkProductsError;
+
+      // 3. Unlink user from price_tables (set vendedor_id to null) to avoid FK constraint violation
+      const { error: unlinkPriceTablesError } = await supabase
+        .from('price_tables')
+        .update({ vendedor_id: null })
+        .eq('vendedor_id', profileId);
+
+      if (unlinkPriceTablesError) throw unlinkPriceTablesError;
+
+      // 4. Now safe to delete the profile
+      const { error } = await supabase.from('profiles').delete().eq('id', profileId);
+      
+      if (error) {
+        console.error(error);
+        throw new Error('Não foi possível excluir. Verifique se o usuário possui registros vinculados (Vendas/Pedidos).');
+      }
+
+      setUsers(users.filter(u => u.id !== profileId));
+      toast.success('Usuário removido com sucesso.');
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
+
   const openModal = (user?: Profile) => {
     if (user) {
       setEditingUser(user);
@@ -210,39 +259,39 @@ export default function Users() {
                 </tr>
               </thead>
               <tbody className="divide-y-2 divide-black">
-                {filteredUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50 transition-colors">
+                {filteredUsers.map((u) => (
+                  <tr key={u.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-4">
                         <div className="h-10 w-10 bg-white border border-black flex items-center justify-center text-black font-bold text-sm shrink-0">
-                          {user.full_name?.charAt(0).toUpperCase() || user.email.charAt(0).toUpperCase()}
+                          {u.full_name?.charAt(0).toUpperCase() || u.email.charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <p className="font-bold text-black truncate uppercase">{user.full_name || 'SEM NOME'}</p>
-                          <p className="text-xs text-gray-600 font-medium truncate uppercase">{user.email}</p>
+                          <p className="font-bold text-black truncate uppercase">{u.full_name || 'SEM NOME'}</p>
+                          <p className="text-xs text-gray-600 font-medium truncate uppercase">{u.email}</p>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 text-black font-medium">
-                      {user.phone || '-'}
+                      {u.phone || '-'}
                     </td>
                     <td className="px-6 py-4">
                       <Badge 
                         variant={
-                          user.role === 'admin' ? 'warning' : 
-                          user.role === 'vendedor' ? 'info' : 
+                          u.role === 'admin' ? 'warning' : 
+                          u.role === 'vendedor' ? 'info' : 
                           'success'
                         }
                       >
-                        {user.role.toUpperCase()}
+                        {u.role.toUpperCase()}
                       </Badge>
                     </td>
                     <td className="px-6 py-4">
-                      {user.client_id ? (
+                      {u.client_id ? (
                         <div className="flex items-center gap-2 text-black bg-white px-2 py-1 border border-black w-fit">
                           <Building2 size={12} />
                           <span className="font-bold text-xs truncate max-w-[120px] uppercase">
-                            {clients.find(c => c.id === user.client_id)?.nome_fantasia || '...'}
+                            {clients.find(c => c.id === u.client_id)?.nome_fantasia || '...'}
                           </span>
                         </div>
                       ) : (
@@ -250,14 +299,25 @@ export default function Users() {
                       )}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <Button 
-                        variant="secondary" 
-                        size="sm" 
-                        onClick={() => openModal(user)}
-                        leftIcon={<Edit2 size={14} />}
-                      >
-                        EDITAR
-                      </Button>
+                      <div className="flex items-center justify-end gap-2">
+                        <Button 
+                          variant="secondary" 
+                          size="sm" 
+                          onClick={() => openModal(u)}
+                          leftIcon={<Edit2 size={14} />}
+                        >
+                          EDITAR
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => deleteUser(u.id)}
+                          className="h-8 w-8 hover:bg-black hover:text-white border border-transparent hover:border-black"
+                          title="Excluir Usuário"
+                        >
+                          <Trash2 size={16} />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -275,14 +275,41 @@ export default function Products() {
 
   const deleteProduct = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir este produto?')) return;
+    
     try {
       const { error } = await supabase.from('products').delete().eq('id', id);
-      if (error) throw error;
+      
+      if (error) {
+        // FK Constraint Violation (Product is in orders)
+        if (error.code === '23503') {
+          const shouldArchive = confirm(
+            'Este produto possui histórico de vendas e NÃO pode ser excluído permanentemente.\n\nDeseja INATIVÁ-LO para que não apareça mais em novos pedidos?'
+          );
+          
+          if (shouldArchive) {
+            const { error: archiveError } = await supabase
+              .from('products')
+              .update({ status: 'inactive' })
+              .eq('id', id);
+              
+            if (archiveError) throw archiveError;
+            
+            // Update local state to reflect inactive status
+            setProducts(products.map(p => p.id === id ? { ...p, status: 'inactive' } : p));
+            toast.success('Produto inativado com sucesso.');
+            return;
+          }
+          return; // User cancelled archive
+        }
+        throw error;
+      }
+
+      // Successful delete (no history)
       setProducts(products.filter(p => p.id !== id));
       toast.success('Produto excluído.');
     } catch (error) {
       console.error('Error deleting product:', error);
-      toast.error('Erro ao excluir produto. Verifique se está em uso.');
+      toast.error('Erro ao excluir produto.');
     }
   };
 

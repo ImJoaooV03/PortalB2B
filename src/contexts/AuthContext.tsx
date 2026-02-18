@@ -47,17 +47,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
       } catch (err: any) {
-        console.error('Error initializing session:', err);
-        
-        // FIX: Handle invalid refresh token by forcing sign out to clear local storage
-        if (err?.message?.includes('Refresh Token Not Found') || err?.code === 'refresh_token_not_found') {
-          console.warn('Session invalid, clearing local storage...');
-          await supabase.auth.signOut().catch(() => {}); // Ignore errors during signout
+        // Check for specific auth errors that require logout
+        // "Invalid Refresh Token" or "Refresh Token Not Found" means the stored session is dead.
+        const isRefreshTokenError = 
+          err?.message?.includes('Invalid Refresh Token') || 
+          err?.message?.includes('Refresh Token Not Found') ||
+          err?.code === 'refresh_token_not_found';
+
+        if (isRefreshTokenError) {
+          console.warn('Session expired or invalid refresh token. Cleaning up...');
+          // Force sign out to clear local storage
+          await supabase.auth.signOut().catch(() => {}); 
+          
           if (mounted) {
             setSession(null);
             setUser(null);
             setProfile(null);
           }
+        } else {
+          // Only log real unexpected errors to console
+          console.error('Error initializing session:', err);
         }
         
         if (mounted) setLoading(false);
@@ -70,6 +79,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (mounted) {
         // Handle explicit sign out event or session update
         if (event === 'SIGNED_OUT') {
+            setSession(null);
+            setUser(null);
+            setProfile(null);
+            setLoading(false);
+        } else if (event === 'TOKEN_REFRESH_REVOKED') {
+            // Handle revoked token event specifically
             setSession(null);
             setUser(null);
             setProfile(null);

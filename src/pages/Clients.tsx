@@ -75,14 +75,64 @@ export default function Clients() {
   };
 
   const deleteClient = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este cliente?')) return;
+    if (!confirm('Tem certeza que deseja excluir esta empresa?')) return;
+    
     try {
+      // 1. Tentar desvincular usuários primeiro (Setar client_id = null)
+      // Isso permite excluir a empresa se ela só tiver usuários, mas não pedidos.
+      const { error: unlinkUsersError } = await supabase
+        .from('profiles')
+        .update({ client_id: null })
+        .eq('client_id', id);
+
+      if (unlinkUsersError) throw unlinkUsersError;
+
+      // 2. Tentar excluir tabelas de preço vinculadas
+      const { error: deleteTablesError } = await supabase
+        .from('price_tables')
+        .delete()
+        .eq('client_id', id);
+
+      if (deleteTablesError) {
+         // Se falhar aqui, provavelmente a tabela tem itens ou vínculos. Ignora e tenta deletar o cliente direto para cair no erro principal.
+         console.warn('Não foi possível limpar tabelas automaticamente', deleteTablesError);
+      }
+
+      // 3. Tentar excluir o cliente
       const { error } = await supabase.from('clients').delete().eq('id', id);
-      if (error) throw error;
+      
+      if (error) {
+        // Código 23503 = Violação de Chave Estrangeira (Tem Pedidos vinculados)
+        if (error.code === '23503') {
+          const shouldInactivate = confirm(
+            'ATENÇÃO: Esta empresa possui HISTÓRICO DE PEDIDOS e não pode ser excluída permanentemente.\n\nDeseja INATIVAR a empresa? Isso impedirá novos pedidos, mas manterá o histórico salvo.'
+          );
+
+          if (shouldInactivate) {
+            const { error: updateError } = await supabase
+              .from('clients')
+              .update({ status: 'inactive' })
+              .eq('id', id);
+
+            if (updateError) throw updateError;
+
+            // Atualiza a lista localmente
+            setClients(clients.map(c => c.id === id ? { ...c, status: 'inactive' } : c));
+            toast.success('Empresa inativada com sucesso.');
+            return;
+          }
+          return; // Usuário cancelou
+        }
+        throw error; // Outro erro qualquer
+      }
+
+      // Sucesso na exclusão total
       setClients(clients.filter(c => c.id !== id));
-      toast.success('Cliente removido com sucesso.');
+      toast.success('Empresa removida com sucesso.');
+
     } catch (error: any) {
-      toast.error('Erro ao excluir cliente. Verifique pedidos vinculados.');
+      console.error(error);
+      toast.error('Erro ao processar a exclusão.');
     }
   };
 
@@ -204,6 +254,7 @@ export default function Clients() {
                           size="icon" 
                           onClick={() => deleteClient(client.id)}
                           className="h-8 w-8 hover:bg-black hover:text-white"
+                          title={client.status === 'active' ? 'Excluir ou Inativar' : 'Excluir'}
                         >
                           <Trash2 size={14} />
                         </Button>
